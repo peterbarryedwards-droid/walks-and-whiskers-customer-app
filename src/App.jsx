@@ -4,227 +4,234 @@ import { useState, useEffect, useRef, useCallback } from "react";
    GLOBAL CSS
 ───────────────────────────────────────────── */
 const CSS = `
+  @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
-    --bg: #0d0f18;
-    --card: #13151f;
-    --card2: #181a27;
-    --border: #1e2135;
-    --border2: #252840;
-    --purple: #6c5ce7;
-    --purple-dim: #4a3fa3;
-    --green: #00b894;
-    --orange: #e17055;
-    --yellow: #fdcb6e;
-    --blue: #0984e3;
-    --red: #d63031;
-    --text: #eef0f8;
-    --muted: #8890b0;
-    --muted2: #555;
-    --radius: 14px;
-    --radius-sm: 8px;
+    --bg: #0d0f18; --card: #13151f; --card2: #181a27;
+    --border: #1e2135; --border2: #252840;
+    --purple: #6c5ce7; --green: #00b894; --orange: #e17055;
+    --yellow: #fdcb6e; --blue: #0984e3; --red: #d63031;
+    --text: #eef0f8; --muted: #8890b0; --muted2: #555;
+    --radius: 14px; --radius-sm: 8px;
     --safe-bottom: env(safe-area-inset-bottom, 0px);
   }
   html, body, #root { height: 100%; background: var(--bg); color: var(--text); font-family: 'DM Sans', sans-serif; }
   body { overflow: hidden; }
   #root { display: flex; flex-direction: column; max-width: 480px; margin: 0 auto; }
-
   .app-shell { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
   .tab-content { flex: 1; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; padding-bottom: calc(80px + var(--safe-bottom)); }
 
-  /* NAV */
   .bottom-nav { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 480px; background: rgba(13,15,24,0.96); backdrop-filter: blur(20px); border-top: 1px solid var(--border); display: flex; padding-bottom: var(--safe-bottom); z-index: 100; }
   .nav-tab { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 10px 4px 8px; cursor: pointer; border: none; background: none; color: var(--muted2); transition: color 0.2s; -webkit-tap-highlight-color: transparent; }
   .nav-tab.active { color: var(--purple); }
   .nav-tab span { font-family: 'Bebas Neue', sans-serif; font-size: 10px; letter-spacing: 0.5px; }
   .nav-icon { font-size: 22px; line-height: 1; }
 
-  /* CARDS */
   .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin: 0 16px 12px; }
   .card-tap { cursor: pointer; transition: background 0.15s, border-color 0.15s; -webkit-tap-highlight-color: transparent; }
   .card-tap:active { background: var(--card2); border-color: var(--border2); }
   .card-sm { padding: 12px 14px; margin-bottom: 8px; }
 
-  /* TYPOGRAPHY */
   .bebas { font-family: 'Bebas Neue', sans-serif; }
   .section-label { font-family: 'Bebas Neue', sans-serif; font-size: 12px; letter-spacing: 1.5px; color: var(--muted); padding: 0 16px; margin-bottom: 8px; margin-top: 20px; display: flex; align-items: center; gap: 8px; }
   .section-label::after { content: ''; flex: 1; height: 1px; background: var(--border); }
-  .page-header { padding: 16px 16px 0; }
-  .page-title { font-family: 'Bebas Neue', sans-serif; font-size: 28px; letter-spacing: 1px; color: var(--text); line-height: 1; }
+  .page-title { font-family: 'Bebas Neue', sans-serif; font-size: 28px; letter-spacing: 1px; line-height: 1; }
   .page-sub { font-size: 13px; color: var(--muted); margin-top: 3px; }
 
-  /* BUTTONS */
-  .btn { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 14px 20px; border-radius: var(--radius); border: none; cursor: pointer; font-family: 'Bebas Neue', sans-serif; font-size: 18px; letter-spacing: 1px; transition: opacity 0.15s, transform 0.1s; -webkit-tap-highlight-color: transparent; width: 100%; }
+  .btn { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 14px 20px; border-radius: var(--radius); border: none; cursor: pointer; font-family: 'DM Sans', sans-serif; font-size: 15px; font-weight: 700; transition: opacity 0.15s, transform 0.1s; -webkit-tap-highlight-color: transparent; width: 100%; }
   .btn:active { transform: scale(0.97); opacity: 0.85; }
   .btn-primary { background: var(--purple); color: white; }
   .btn-green { background: var(--green); color: #001a12; }
-  .btn-ghost { background: transparent; border: 1px solid var(--border2); color: var(--muted); font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 500; letter-spacing: 0; padding: 12px 16px; }
-  .btn-orange { background: var(--orange); color: white; }
-  .btn-sm { padding: 10px 16px; font-size: 14px; width: auto; }
+  .btn-ghost { background: transparent; border: 1px solid var(--border2); color: var(--muted); }
+  .btn-sm { padding: 9px 14px; font-size: 13px; width: auto; border-radius: var(--radius-sm); }
   .btn-row { display: flex; gap: 10px; padding: 0 16px; margin-bottom: 12px; }
   .btn-row .btn { flex: 1; }
 
-  /* INPUTS */
-  .input { background: #0d0f18; border: 1px solid var(--border2); border-radius: var(--radius-sm); color: var(--text); font-family: 'DM Sans', sans-serif; font-size: 15px; padding: 13px 14px; width: 100%; outline: none; transition: border-color 0.2s; }
+  .input { background: #0d0f18; border: 2px solid var(--border); border-radius: var(--radius-sm); color: var(--text); font-family: 'DM Sans', sans-serif; font-size: 15px; padding: 13px 14px; width: 100%; outline: none; transition: border-color 0.2s; line-height: 1.5; }
   .input:focus { border-color: var(--purple); }
   .input::placeholder { color: var(--muted2); }
-  textarea.input { resize: none; line-height: 1.5; }
+  textarea.input { resize: vertical; }
   .input-label { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
   .input-group { margin-bottom: 14px; }
 
-  /* CHIPS / TAGS */
+  .chip { padding: 9px 16px; border-radius: 20px; border: 1.5px solid var(--border); background: transparent; color: var(--muted); font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; -webkit-tap-highlight-color: transparent; white-space: nowrap; }
+  .chip.active-purple { border-color: var(--purple); background: rgba(108,92,231,0.15); color: var(--purple); }
+  .chip.active-green { border-color: var(--green); background: rgba(0,184,148,0.12); color: var(--green); }
+  .chip.active-orange { border-color: var(--orange); background: rgba(225,112,85,0.12); color: var(--orange); }
+  .chip.active-yellow { border-color: var(--yellow); background: rgba(253,203,110,0.1); color: var(--yellow); }
   .chip-row { display: flex; gap: 8px; flex-wrap: wrap; }
-  .chip { padding: 9px 16px; border-radius: 20px; border: 1px solid var(--border2); background: transparent; color: var(--muted); font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.15s; -webkit-tap-highlight-color: transparent; }
-  .chip.active { border-color: var(--purple); background: rgba(108,92,231,0.15); color: var(--purple); }
-  .chip-green.active { border-color: var(--green); background: rgba(0,184,148,0.12); color: var(--green); }
-  .chip-orange.active { border-color: var(--orange); background: rgba(225,112,85,0.12); color: var(--orange); }
-  .chip-yellow.active { border-color: var(--yellow); background: rgba(253,203,110,0.1); color: var(--yellow); }
 
-  /* BADGES */
   .badge { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 10px; font-size: 11px; font-weight: 600; }
   .badge-purple { background: rgba(108,92,231,0.18); color: var(--purple); }
   .badge-green { background: rgba(0,184,148,0.15); color: var(--green); }
   .badge-orange { background: rgba(225,112,85,0.15); color: var(--orange); }
   .badge-yellow { background: rgba(253,203,110,0.12); color: var(--yellow); }
   .badge-muted { background: rgba(136,144,176,0.12); color: var(--muted); }
-  .badge-red { background: rgba(214,48,49,0.15); color: var(--red); }
 
-  /* CHECKBOX */
   .check-row { display: flex; align-items: flex-start; gap: 12px; }
   .check-box { width: 26px; height: 26px; min-width: 26px; border-radius: 8px; border: 2px solid var(--border2); background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; -webkit-tap-highlight-color: transparent; flex-shrink: 0; margin-top: 1px; }
   .check-box.done { background: var(--green); border-color: var(--green); }
-  .check-content { flex: 1; }
 
-  /* DIVIDER */
-  .divider { height: 1px; background: var(--border); margin: 12px 16px; }
-
-  /* PILL TABS */
-  .pill-tabs { display: flex; gap: 8px; padding: 0 16px; margin-bottom: 16px; overflow-x: auto; scrollbar-width: none; }
-  .pill-tabs::-webkit-scrollbar { display: none; }
-  .pill-tab { padding: 8px 16px; border-radius: 20px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap; transition: all 0.15s; -webkit-tap-highlight-color: transparent; }
-  .pill-tab.active { background: var(--purple); border-color: var(--purple); color: white; }
-
-  /* MODAL */
-  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 200; display: flex; flex-direction: column; justify-content: flex-end; }
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 200; display: flex; flex-direction: column; justify-content: flex-end; }
   .modal-sheet { background: var(--card); border-radius: 20px 20px 0 0; padding: 20px 16px; padding-bottom: calc(20px + var(--safe-bottom)); max-height: 90dvh; overflow-y: auto; }
   .modal-handle { width: 36px; height: 4px; background: var(--border2); border-radius: 2px; margin: 0 auto 20px; }
   .modal-title { font-family: 'Bebas Neue', sans-serif; font-size: 22px; letter-spacing: 1px; margin-bottom: 16px; }
 
-  /* LOADING */
   .spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid var(--border2); border-top-color: var(--purple); border-radius: 50%; animation: spin 0.7s linear infinite; }
+  .spinner-lg { width: 48px; height: 48px; border-width: 3px; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .loading-bar { height: 3px; background: linear-gradient(90deg, transparent, var(--purple), transparent); background-size: 200% 100%; animation: loadbar 1.2s ease-in-out infinite; border-radius: 2px; }
-  @keyframes loadbar { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+  .fade-up { animation: fadeUp 0.25s ease forwards; }
 
-  /* MISC */
-  .tag { display: inline-flex; align-items: center; gap: 4px; font-size: 11px; color: var(--muted); }
-  .dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; }
-  .dot-purple { background: var(--purple); }
-  .dot-green { background: var(--green); }
-  .dot-orange { background: var(--orange); }
-  .dot-yellow { background: var(--yellow); }
-  .dot-red { background: var(--red); }
-  .dot-muted { background: var(--muted2); }
-  .empty-state { text-align: center; padding: 48px 24px; color: var(--muted); }
-  .empty-state .icon { font-size: 48px; margin-bottom: 12px; }
-  .empty-state h3 { font-family: 'Bebas Neue', sans-serif; font-size: 20px; margin-bottom: 8px; color: var(--text); }
-  .empty-state p { font-size: 14px; line-height: 1.6; }
+  .progress-track { background: var(--border); border-radius: 99px; height: 4px; overflow: hidden; margin-bottom: 24px; }
+  .progress-fill { height: 100%; border-radius: 99px; transition: width 0.4s ease; background: var(--purple); }
+
+  .found-row { display: flex; align-items: flex-start; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--border); }
+  .found-row:last-child { border-bottom: none; }
+  .missing-chip { display: inline-flex; align-items: center; gap: 5px; background: rgba(214,48,49,0.1); border: 1px solid rgba(214,48,49,0.3); border-radius: 8px; padding: 5px 10px; font-size: 12px; color: #ff7675; font-weight: 600; margin: 3px; }
+
+  .draft-box { background: #0d0f18; border: 1.5px solid var(--border2); border-radius: var(--radius-sm); padding: 16px; font-family: 'DM Mono', monospace; font-size: 13px; line-height: 1.7; color: #c8d0f0; white-space: pre-wrap; width: 100%; resize: vertical; outline: none; min-height: 140px; }
+  .draft-box:focus { border-color: var(--purple); }
+  .double-check-box { background: #0d1a0d; border: 1px solid rgba(0,184,148,0.3); border-radius: var(--radius-sm); padding: 14px; margin-top: 12px; }
+
+  .bubble-in { background: var(--border); border-radius: 14px 14px 14px 4px; padding: 11px 14px; font-size: 13px; color: #c8d0f0; line-height: 1.6; max-width: 82%; }
+  .bubble-out { background: #1e1b4b; border: 1px solid #3730a3; border-radius: 14px 14px 4px 14px; padding: 11px 14px; font-size: 13px; color: #c7d2fe; line-height: 1.6; max-width: 82%; margin-left: auto; }
+
+  .stage-pill { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+  .back-btn { display: flex; align-items: center; gap: 6px; color: var(--purple); font-size: 15px; font-weight: 600; padding: 14px 16px 4px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
   .row { display: flex; align-items: center; gap: 8px; }
   .row-between { display: flex; align-items: center; justify-content: space-between; }
   .col { display: flex; flex-direction: column; gap: 4px; }
   .flex-1 { flex: 1; }
-  .mt-4 { margin-top: 4px; }
-  .mt-8 { margin-top: 8px; }
-  .mt-12 { margin-top: 12px; }
-  .mt-16 { margin-top: 16px; }
-  .mb-4 { margin-bottom: 4px; }
-  .mb-8 { margin-bottom: 8px; }
-  .mb-12 { margin-bottom: 12px; }
-  .mb-16 { margin-bottom: 16px; }
-  .text-sm { font-size: 13px; }
-  .text-xs { font-size: 11px; }
-  .text-muted { color: var(--muted); }
-  .text-green { color: var(--green); }
-  .text-orange { color: var(--orange); }
-  .text-purple { color: var(--purple); }
-  .text-yellow { color: var(--yellow); }
-  .text-red { color: var(--red); }
+  .text-sm { font-size: 13px; } .text-xs { font-size: 11px; }
+  .text-muted { color: var(--muted); } .text-green { color: var(--green); }
+  .text-orange { color: var(--orange); } .text-purple { color: var(--purple); }
   .fw-600 { font-weight: 600; }
-  .back-btn { display: flex; align-items: center; gap: 6px; color: var(--purple); font-size: 15px; font-weight: 600; padding: 16px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
-  .draft-box { background: #0d0f18; border: 1px solid var(--border2); border-radius: var(--radius-sm); padding: 14px; font-size: 14px; line-height: 1.7; white-space: pre-wrap; color: var(--text); }
-  .copy-btn { display: flex; align-items: center; gap: 6px; color: var(--purple); font-size: 13px; font-weight: 600; cursor: pointer; padding: 8px 0; -webkit-tap-highlight-color: transparent; }
-  .step-indicator { font-size: 12px; color: var(--muted); text-align: center; margin-bottom: 8px; }
-  .progress-dots { display: flex; gap: 6px; justify-content: center; margin-bottom: 20px; }
-  .progress-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--border2); transition: background 0.2s; }
-  .progress-dot.active { background: var(--purple); }
-  .highlight-box { background: rgba(108,92,231,0.08); border: 1px solid rgba(108,92,231,0.2); border-radius: var(--radius-sm); padding: 12px 14px; }
-  .earnings-card { background: linear-gradient(135deg, #1a1030 0%, #13151f 100%); border: 1px solid rgba(108,92,231,0.3); border-radius: var(--radius); padding: 16px; margin: 0 16px 12px; }
-  .stage-pill { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+  .mt-4{margin-top:4px} .mt-8{margin-top:8px} .mt-12{margin-top:12px} .mt-16{margin-top:16px}
+  .mb-4{margin-bottom:4px} .mb-8{margin-bottom:8px} .mb-12{margin-bottom:12px} .mb-16{margin-bottom:16px}
+  .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+  .earnings-card { background: linear-gradient(135deg, #1a1030 0%, #13151f 100%); border: 1px solid rgba(108,92,231,0.25); border-radius: var(--radius); padding: 16px; margin: 0 16px 12px; }
+  .empty-state { text-align: center; padding: 48px 24px; color: var(--muted); }
+  .empty-state .icon { font-size: 44px; margin-bottom: 12px; }
+  .empty-state h3 { font-family: 'Bebas Neue', sans-serif; font-size: 20px; margin-bottom: 6px; color: var(--text); }
+  .pill-tabs { display: flex; gap: 8px; padding: 0 16px; overflow-x: auto; scrollbar-width: none; }
+  .pill-tabs::-webkit-scrollbar { display: none; }
+  .pill-tab { padding: 7px 14px; border-radius: 20px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: all 0.15s; -webkit-tap-highlight-color: transparent; }
+  .pill-tab.active { background: var(--purple); border-color: var(--purple); color: white; }
+  .toast { position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%); background: var(--card2); border: 1px solid var(--border2); border-radius: 12px; padding: 11px 20px; font-weight: 700; font-size: 14px; z-index: 999; white-space: nowrap; }
+  .type-card { background: var(--card); border: 1.5px solid var(--border); border-radius: var(--radius); padding: 14px 16px; cursor: pointer; transition: all 0.18s; display: flex; align-items: center; gap: 12px; margin-bottom: 10px; -webkit-tap-highlight-color: transparent; }
+  .type-card:active { background: var(--card2); }
 `;
 
 /* ─────────────────────────────────────────────
    DATA LAYER
 ───────────────────────────────────────────── */
 const db = {
-  get(k) {
-    try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch { return null; }
-  },
-  set(k, v) {
-    try { localStorage.setItem(k, JSON.stringify(v)); } catch {}
-  },
-  getAll(k) { return this.get(k) || []; },
-  save(k, items) { this.set(k, items); },
-  upsert(k, item) {
-    const items = this.getAll(k);
+  get: (k) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch { return null; } },
+  set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+  getAll: (k) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : []; } catch { return []; } },
+  upsert: (k, item) => {
+    const items = db.getAll(k);
     const idx = items.findIndex(i => i.id === item.id);
     if (idx >= 0) items[idx] = item; else items.push(item);
-    this.save(k, items);
-    return item;
+    db.set(k, items); return item;
   },
-  remove(k, id) {
-    const items = this.getAll(k).filter(i => i.id !== id);
-    this.save(k, items);
-  }
+  remove: (k, id) => { db.set(k, db.getAll(k).filter(i => i.id !== id)); },
 };
 
 const uid = () => Math.random().toString(36).slice(2, 10);
-const today = () => new Date().toISOString().split("T")[0];
-const now = () => new Date().toISOString();
-const fmtDate = d => { if (!d) return ""; const dt = new Date(d); return dt.toLocaleDateString("en-GB", { day: "numeric", month: "short" }); };
-const fmtTime = t => { if (!t) return ""; return t; };
-const daysDiff = (d1, d2) => { const a = new Date(d1), b = new Date(d2); return Math.floor((b - a) / 86400000); };
-const daysSince = d => daysDiff(d, now());
+const todayStr = () => new Date().toISOString().split("T")[0];
+const nowStr = () => new Date().toISOString();
+const fmtDate = d => { if (!d) return ""; return new Date(d).toLocaleDateString("en-GB", { day: "numeric", month: "short" }); };
+const daysSince = d => Math.floor((Date.now() - new Date(d)) / 86400000);
 
 /* ─────────────────────────────────────────────
    CONSTANTS
 ───────────────────────────────────────────── */
-const PIPELINE_STAGES = [
-  { id: "new_enquiry",       label: "New Enquiry",        color: "#fdcb6e", dot: "dot-yellow" },
-  { id: "replied",           label: "Replied",             color: "#6c5ce7", dot: "dot-purple" },
-  { id: "interested",        label: "Interested",          color: "#0984e3", dot: "dot-purple" },
-  { id: "meet_arranged",     label: "Meet Arranged",       color: "#00b894", dot: "dot-green" },
-  { id: "met",               label: "Met",                 color: "#00b894", dot: "dot-green" },
-  { id: "first_walk_booked", label: "First Walk Booked",   color: "#00b894", dot: "dot-green" },
-  { id: "gone_quiet",        label: "Gone Quiet",          color: "#e17055", dot: "dot-orange" },
-  { id: "not_proceeding",    label: "Not Proceeding",      color: "#555",    dot: "dot-muted" },
+const STAGES = [
+  { id: "new_enquiry",    label: "New Enquiry",   color: "#fdcb6e" },
+  { id: "replied",        label: "Replied",        color: "#6c5ce7" },
+  { id: "interested",     label: "Interested",     color: "#0984e3" },
+  { id: "meet_arranged",  label: "Meet Arranged",  color: "#00b894" },
+  { id: "met",            label: "Met",            color: "#00b894" },
+  { id: "active",         label: "Active Client",  color: "#00b894" },
+  { id: "gone_quiet",     label: "Gone Quiet",     color: "#e17055" },
+  { id: "not_proceeding", label: "Not Proceeding", color: "#555"    },
 ];
-
-const STAGE_COLOR = Object.fromEntries(PIPELINE_STAGES.map(s => [s.id, s.color]));
-const STAGE_LABEL = Object.fromEntries(PIPELINE_STAGES.map(s => [s.id, s.label]));
-
-const SERVICES = [
-  { id: "dog_walk",    label: "Dog Walk",        icon: "🦮" },
-  { id: "drop_in",     label: "Dog Drop-in",     icon: "🐕" },
-  { id: "cat_visit",   label: "Cat Visit",        icon: "🐱" },
-  { id: "home_sit",    label: "Dog Home Sit",     icon: "🏡" },
-  { id: "stay_over",   label: "Dog Stay Over",    icon: "🌙" },
-];
-const SERVICE_LABEL = Object.fromEntries(SERVICES.map(s => [s.id, s.label]));
-const SERVICE_ICON  = Object.fromEntries(SERVICES.map(s => [s.id, s.icon]));
-
+const STAGE_MAP = Object.fromEntries(STAGES.map(s => [s.id, s]));
 const PLATFORMS = ["Rover", "Bark", "Direct", "Other"];
+const SERVICES = [
+  { id: "dog_walk",  label: "Dog Walk",    icon: "🦮" },
+  { id: "drop_in",   label: "Dog Drop-in", icon: "🐕" },
+  { id: "cat_visit", label: "Cat Visit",   icon: "🐱" },
+  { id: "home_sit",  label: "Home Sit",    icon: "🏡" },
+  { id: "stay_over", label: "Stay Over",   icon: "🌙" },
+];
+const SERVICE_MAP = Object.fromEntries(SERVICES.map(s => [s.id, s]));
 
-const DURATIONS = ["30 min", "45 min", "60 min"];
+const ENQUIRY_TYPES = [
+  { id: "new_client",      label: "New Client",       icon: "👋", color: "#6c5ce7", desc: "Someone reaching out for the first time" },
+  { id: "existing_client", label: "Existing Client",  icon: "🐾", color: "#00b894", desc: "A client you already walk for" },
+  { id: "quote",           label: "Price Enquiry",    icon: "💷", color: "#fdcb6e", desc: "They want to know what you charge" },
+  { id: "confirm",         label: "General Response", icon: "💬", color: "#0984e3", desc: "Follow ups, anything else" },
+  { id: "decline",         label: "Turn Down a Job",  icon: "🙏", color: "#e17055", desc: "Can't take it — be kind about it" },
+];
+
+const FIELD_LABELS = {
+  client_name: { label: "Client name",   icon: "👤" },
+  dog_name:    { label: "Dog name(s)",   icon: "🐕" },
+  service:     { label: "Service",       icon: "🦮" },
+  dates:       { label: "Dates / times", icon: "📅" },
+  location:    { label: "Location",      icon: "📍" },
+  rate:        { label: "Rate / price",  icon: "💷" },
+  recurring:   { label: "Regular work?", icon: "🔁" },
+  notes:       { label: "Other notes",   icon: "📝" },
+};
+
+const SYSTEM_PROMPTS = {
+  new_client: `You are a communication coach helping Freddie, a professional young dog walker in Winchester, reply to a new client enquiry.
+
+Rules for the DRAFT REPLY:
+- Be warm, friendly and professional
+- Structure the reply in this exact priority order:
+  1. Thank them and express interest
+  2. If location is unknown, ask for it naturally
+  3. If dates or times are unknown, ask for them naturally
+  4. If platform is "Direct" or "Other" AND rate has not been agreed, mention the rate clearly. If platform is "Rover" or "Bark" NEVER mention rate — it is handled by the platform
+  5. THEN suggest a short meet-and-greet naturally
+  6. Close warmly
+- Never invent or guess a rate — only use one if explicitly provided
+- Sign off as Freddie. Use British English.
+
+Format with ONLY these two sections:
+DRAFT REPLY
+QUESTIONS TO ASK`,
+
+  existing_client: `You are helping Freddie, a professional dog walker, reply to an existing client.
+Skip all introductions and meet-and-greet suggestions. Warm, efficient, professional.
+Sign off as Freddie. Use British English.
+Format with ONLY:
+DRAFT REPLY`,
+
+  quote: `You are helping Freddie respond to a price enquiry. State the rate clearly and confidently.
+If platform is Rover or Bark, NEVER mention rate.
+Sign off as Freddie. Use British English.
+Format with ONLY:
+DRAFT REPLY
+WHAT TO MENTION`,
+
+  confirm: `You are helping Freddie send a general response. Cover agreed details.
+Sign off as Freddie. Use British English.
+Format with ONLY:
+DRAFT REPLY
+MISSING INFO TO GET`,
+
+  decline: `You are helping Freddie politely decline a job. Be kind and brief. Do not burn bridges.
+Sign off as Freddie. Use British English.
+Format with ONLY:
+DRAFT REPLY
+ONE TIP`,
+};
 
 /* ─────────────────────────────────────────────
    AI HELPERS
@@ -234,327 +241,347 @@ async function callClaude(prompt, maxTokens = 1200) {
   const timeout = setTimeout(() => controller.abort(), 30000);
   try {
     const r = await fetch("/api/chat", {
-      method: "POST",
+      method: "POST", signal: controller.signal,
       headers: { "Content-Type": "application/json" },
-      signal: controller.signal,
-      body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
-        max_tokens: maxTokens,
-        messages: [{ role: "user", content: prompt }],
-      }),
+      body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: maxTokens, messages: [{ role: "user", content: prompt }] }),
     });
     clearTimeout(timeout);
-    if (!r.ok) throw new Error("API error " + r.status);
+    if (!r.ok) throw new Error("API " + r.status);
     const d = await r.json();
     if (d.error) throw new Error(d.error.message);
     return d.content?.[0]?.text || "";
-  } catch (e) {
-    clearTimeout(timeout);
-    throw e;
-  }
+  } catch (e) { clearTimeout(timeout); throw e; }
 }
 
 async function callClaudeJSON(prompt) {
   const text = await callClaude(prompt, 1200);
-  const clean = text.replace(/```json|```/g, "").trim();
-  try { return JSON.parse(clean); } catch { return {}; }
+  try { return JSON.parse(text.replace(/```json|```/g, "").trim()); } catch { return {}; }
+}
+
+function parseSections(text) {
+  const sections = [];
+  const patterns = [
+    { key: "draft",  labels: ["DRAFT REPLY"] },
+    { key: "extra1", labels: ["QUESTIONS TO ASK", "WHAT TO MENTION", "MISSING INFO TO GET", "ONE TIP"] },
+  ];
+  for (const p of patterns) {
+    for (const label of p.labels) {
+      const idx = text.toUpperCase().indexOf(label);
+      if (idx !== -1) {
+        let content = text.slice(idx + label.length).replace(/^[\s:*#-]+/, "");
+        const next = content.search(/\n[A-Z][A-Z ]{2,}(\n|:)/);
+        if (next !== -1) content = content.slice(0, next);
+        sections.push({ key: p.key, label, content: content.trim() });
+        break;
+      }
+    }
+  }
+  if (!sections.length) sections.push({ key: "draft", label: "RESPONSE", content: text.trim() });
+  return sections;
 }
 
 /* ─────────────────────────────────────────────
-   CHASE / ACTION LOGIC
+   CHASE LOGIC
 ───────────────────────────────────────────── */
-function computeActions(contacts, messages, visits) {
+function computeActions(people) {
   const actions = [];
-  const msgByContact = {};
-  for (const m of messages) {
-    if (!msgByContact[m.contactId]) msgByContact[m.contactId] = [];
-    msgByContact[m.contactId].push(m);
+  for (const p of people) {
+    if (p.stage === "not_proceeding") continue;
+    const msgs = p.messages || [];
+    const lastOut = [...msgs].reverse().find(m => m.role === "freddie");
+    const lastIn  = [...msgs].reverse().find(m => m.role === "client");
+    const unreplied = lastIn && (!lastOut || lastIn.date > lastOut.date);
+    if (unreplied && (Date.now() - new Date(lastIn.date)) / 3600000 > 12)
+      actions.push({ personId: p.id, type: "reply", label: `Reply to ${p.name || "someone"}`, urgency: "high", stage: p.stage });
+    if (p.stage === "new_enquiry")
+      actions.push({ personId: p.id, type: "reply_new", label: `Reply to ${p.name || "new enquiry"}`, urgency: "high", stage: p.stage });
+    if (p.stage === "replied" && daysSince(p.lastActionDate || p.createdAt) >= 1)
+      actions.push({ personId: p.id, type: "chase", label: `Chase ${p.name} — no reply for ${daysSince(p.lastActionDate || p.createdAt)}d`, urgency: "medium", stage: p.stage });
+    if (p.stage === "interested" && daysSince(p.lastActionDate || p.createdAt) >= 1)
+      actions.push({ personId: p.id, type: "arrange_meet", label: `Arrange meet with ${p.name}`, urgency: "medium", stage: p.stage });
+    if (p.stage === "meet_arranged" && daysSince(p.lastActionDate || p.createdAt) >= 2)
+      actions.push({ personId: p.id, type: "chase", label: `Chase ${p.name} — meet booked but gone quiet`, urgency: "medium", stage: p.stage });
+    if (p.stage === "met" && daysSince(p.lastActionDate || p.createdAt) >= 1)
+      actions.push({ personId: p.id, type: "chase_booking", label: `Follow up ${p.name} — met but no booking yet`, urgency: "medium", stage: p.stage });
   }
-
-  for (const c of contacts) {
-    if (c.stage === "not_proceeding") continue;
-
-    const contactMsgs = msgByContact[c.id] || [];
-    const lastMsg = contactMsgs.length ? contactMsgs[contactMsgs.length - 1] : null;
-    const lastMsgAge = lastMsg ? daysSince(lastMsg.date) : null;
-    const lastInbound = [...contactMsgs].reverse().find(m => m.direction === "in");
-    const lastOutbound = [...contactMsgs].reverse().find(m => m.direction === "out");
-
-    // Unreplied inbound message (>12h)
-    if (lastInbound && (!lastOutbound || lastInbound.date > lastOutbound.date)) {
-      const hoursAgo = (Date.now() - new Date(lastInbound.date)) / 3600000;
-      if (hoursAgo > 12) {
-        actions.push({ contactId: c.id, type: "reply_needed", label: `Reply to ${c.name}`, urgency: "high", stage: c.stage });
-      }
-    }
-
-    if (c.stage === "new_enquiry") {
-      actions.push({ contactId: c.id, type: "reply_new", label: `Reply to ${c.name} — new enquiry`, urgency: "high", stage: c.stage });
-    }
-    if (c.stage === "replied" && lastMsgAge !== null && lastMsgAge >= 1) {
-      actions.push({ contactId: c.id, type: "chase", label: `Chase ${c.name} — no reply in ${lastMsgAge}d`, urgency: "medium", stage: c.stage });
-    }
-    if (c.stage === "interested") {
-      const age = daysSince(c.lastActionDate || c.createdAt);
-      if (age >= 1) actions.push({ contactId: c.id, type: "arrange_meet", label: `Arrange meet with ${c.name}`, urgency: "medium", stage: c.stage });
-    }
-    if (c.stage === "meet_arranged") {
-      const age = daysSince(c.lastActionDate || c.createdAt);
-      if (age >= 2) actions.push({ contactId: c.id, type: "chase", label: `Chase ${c.name} — meet arranged but quiet`, urgency: "medium", stage: c.stage });
-    }
-    if (c.stage === "met") {
-      const age = daysSince(c.lastActionDate || c.createdAt);
-      if (age >= 1) actions.push({ contactId: c.id, type: "chase_booking", label: `Follow up ${c.name} — met, no booking yet`, urgency: "medium", stage: c.stage });
-    }
-    if (c.stage === "gone_quiet") {
-      const age = daysSince(c.lastActionDate || c.createdAt);
-      if (age >= 3) actions.push({ contactId: c.id, type: "re_engage", label: `Re-engage ${c.name} — gone quiet`, urgency: "low", stage: c.stage });
-    }
-  }
-
   return actions;
 }
 
 /* ─────────────────────────────────────────────
-   SMALL REUSABLE COMPONENTS
+   SMALL COMPONENTS
 ───────────────────────────────────────────── */
-function Chip({ label, active, onClick, color = "purple" }) {
+function StagePill({ stageId }) {
+  const s = STAGE_MAP[stageId] || { label: stageId, color: "#555" };
+  return <span className="stage-pill" style={{ background: s.color + "22", color: s.color }}>{s.label}</span>;
+}
+function Spinner({ large }) { return <div className={`spinner${large ? " spinner-lg" : ""}`} />; }
+function BackBtn({ onBack, label = "Back" }) { return <div className="back-btn" onClick={onBack}>← {label}</div>; }
+function CopyBtn({ text }) {
+  const [copied, setCopied] = useState(false);
   return (
-    <button className={`chip chip-${color} ${active ? "active" : ""}`} onClick={onClick}>
-      {label}
+    <button className="btn btn-ghost mt-8" onClick={() => { navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000); }}>
+      {copied ? "✓ Copied!" : "📋 Copy to clipboard"}
     </button>
   );
 }
-
+function Chip({ label, active, color = "purple", onClick }) {
+  return <button className={`chip${active ? ` active-${color}` : ""}`} onClick={onClick}>{label}</button>;
+}
 function CheckBox({ done, onToggle }) {
-  return (
-    <div className={`check-box ${done ? "done" : ""}`} onClick={onToggle}>
-      {done && <span style={{ color: "#001a12", fontSize: 14, fontWeight: 700 }}>✓</span>}
-    </div>
-  );
-}
-
-function StagePill({ stageId }) {
-  const color = STAGE_COLOR[stageId] || "#555";
-  return (
-    <span className="stage-pill" style={{ background: color + "22", color }}>
-      {STAGE_LABEL[stageId] || stageId}
-    </span>
-  );
-}
-
-function Spinner() { return <div className="spinner" /> }
-
-function BackBtn({ onBack, label = "Back" }) {
-  return <div className="back-btn" onClick={onBack}>← {label}</div>;
-}
-
-function CopyBtn({ text }) {
-  const [copied, setCopied] = useState(false);
-  const copy = () => {
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  };
-  return (
-    <div className="copy-btn" onClick={copy}>
-      {copied ? "✓ Copied!" : "📋 Copy to clipboard"}
-    </div>
-  );
-}
-
-function UrgencyDot({ urgency }) {
-  const cls = urgency === "high" ? "dot-orange" : urgency === "medium" ? "dot-yellow" : "dot-muted";
-  return <span className={`dot ${cls}`} />;
+  return <div className={`check-box${done ? " done" : ""}`} onClick={onToggle}>{done && <span style={{ color: "#001a12", fontSize: 13, fontWeight: 800 }}>✓</span>}</div>;
 }
 
 /* ─────────────────────────────────────────────
-   MESSAGING TOOL
+   MESSAGING FLOW
 ───────────────────────────────────────────── */
-const ENQUIRY_TYPES = [
-  { id: "new_client",   label: "New Client Enquiry",   icon: "👋", desc: "First time reaching out" },
-  { id: "sit_stay",     label: "Sit / Stay Over",       icon: "🌙", desc: "Home sitting or stay over enquiry" },
-  { id: "existing",     label: "Existing Client",       icon: "🐾", desc: "Client you already walk for" },
-  { id: "quote",        label: "Price Enquiry",         icon: "💷", desc: "They want to know rates" },
-  { id: "follow_up",    label: "Follow Up / Chase",     icon: "📲", desc: "Checking in or chasing" },
-  { id: "general",      label: "General Response",      icon: "💬", desc: "General questions, follow ups" },
-  { id: "decline",      label: "Turn Down a Job",       icon: "🙏", desc: "Can't take it — be kind" },
-];
-
-function MessagingTool({ contact, onBack, onSaved }) {
-  const [step, setStep] = useState("type"); // type | platform | context | questions | draft
+function MessagingFlow({ person, onBack, onPersonUpdated }) {
+  const [screen, setScreen] = useState(() => (person?.messages?.length) ? "thread" : "type");
   const [enquiryType, setEnquiryType] = useState(null);
-  const [platform, setPlatform] = useState(contact?.platform || "");
-  const [messageText, setMessageText] = useState("");
-  const [answers, setAnswers] = useState({});
-  const [aiQuestions, setAiQuestions] = useState([]);
-  const [currentQ, setCurrentQ] = useState(0);
-  const [draft, setDraft] = useState("");
-  const [editedDraft, setEditedDraft] = useState("");
-  const [doubleCheck, setDoubleCheck] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [platform, setPlatform] = useState(person?.platform || "Rover");
+  const [rawMessage, setRawMessage] = useState("");
+  const [extracted, setExtracted] = useState({});
+  const [dynamicQs, setDynamicQs] = useState([]);
+  const [qStep, setQStep] = useState(0);
+  const [qAnswers, setQAnswers] = useState({});
+  const [qInput, setQInput] = useState("");
+  const [sections, setSections] = useState([]);
+  const [draftText, setDraftText] = useState("");
+  const [followUpMsg, setFollowUpMsg] = useState("");
+  const [toast, setToast] = useState(null);
+  const [currentPerson, setCurrentPerson] = useState(person);
+  const inputRef = useRef(null);
 
-  const contactMessages = db.getAll("messages").filter(m => m.contactId === contact?.id);
-  const threadContext = contactMessages.map(m => `[${m.direction === "out" ? "Freddie" : contact?.name}]: ${m.text}`).join("\n");
+  const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
+  const typeColor = enquiryType?.color || "#6c5ce7";
 
-  const buildPrompt = (qas) => {
-    const rate = (platform === "Direct" || platform === "Other") ? (contact?.rate || "not set") : "N/A (platform sets this)";
-    const neverRate = platform === "Rover" || platform === "Bark";
-    const dogs = db.getAll("dogs").filter(d => d.contactId === contact?.id);
-    const dogInfo = dogs.length ? dogs.map(d => `${d.name} (${d.breed})`).join(", ") : "unknown";
-
-    const qaBlock = Object.entries(qas).map(([q, a]) => `Q: ${q}\nA: ${a}`).join("\n");
-
-    return `You are a communication assistant for Freddie, an 18-year-old professional dog walker in Winchester.
-
-CONTACT INFO:
-Name: ${contact?.name || "unknown"}
-Platform: ${platform || "unknown"}
-Stage: ${contact?.stage || "unknown"}
-Dogs: ${dogInfo}
-Rate: ${rate}
-${neverRate ? "IMPORTANT: NEVER mention rates — the platform sets these." : ""}
-
-MESSAGE FROM CLIENT:
-${messageText || "(no message — this is a proactive follow up)"}
-
-CONVERSATION HISTORY:
-${threadContext || "(no prior messages)"}
-
-ADDITIONAL CONTEXT:
-${qaBlock || "(none)"}
-
-ENQUIRY TYPE: ${enquiryType}
-
-RULES:
-- Warm, professional, British English
-- Sign off as Freddie
-- For new clients: location and dates first, then meet and greet naturally
-- For sits/stay overs: ask about whether dog can be left alone and for how long
-- For existing clients: skip introductions, skip meet and greet suggestion
-- ${neverRate ? "NEVER mention rate or price." : "Mention rate naturally if relevant."}
-- Never invent or guess a rate
-
-Respond with exactly two sections:
-
-DRAFT REPLY
-[The reply for Freddie to copy and send]
-
-DOUBLE CHECK
-[2-3 bullet points of things Freddie should verify before sending — keep these SHORT]`;
-  };
-
-  const analyseAndQuestion = async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const rate = platform === "Direct" || platform === "Other";
-      const result = await callClaudeJSON(`You are helping Freddie the dog walker reply to a client.
-
-Contact: ${contact?.name || "unknown"}, Platform: ${platform}
-Enquiry type: ${enquiryType}
-Message: ${messageText || "(proactive follow up)"}
-History: ${threadContext || "(none)"}
-
-Identify the MOST IMPORTANT missing pieces of info needed to write a good reply.
-For "new_client": check if location, dates, and service type are known.
-For "sit_stay": also check if accompaniment needs and max alone time are known.
-For "existing": minimal questions needed.
-For "follow_up" or "decline": no questions needed.
-
-Return JSON: { "questions": [{"q": "question text", "hint": "why this matters"}] }
-Maximum 3 questions. If none needed, return { "questions": [] }`);
-
-      const qs = result.questions || [];
-      if (qs.length === 0) {
-        await generateDraft({});
-      } else {
-        setAiQuestions(qs);
-        setCurrentQ(0);
-        setStep("questions");
-      }
-    } catch (e) {
-      setError("Couldn't connect — try again");
-    }
-    setLoading(false);
-  };
-
-  const generateDraft = async (qas) => {
-    setLoading(true);
-    setError("");
-    try {
-      const text = await callClaude(buildPrompt(qas), 1000);
-      const draftMatch = text.match(/DRAFT REPLY\s*([\s\S]*?)(?=DOUBLE CHECK|$)/i);
-      const checkMatch = text.match(/DOUBLE CHECK\s*([\s\S]*)/i);
-      setDraft(draftMatch?.[1]?.trim() || text.trim());
-      setEditedDraft(draftMatch?.[1]?.trim() || text.trim());
-      setDoubleCheck(checkMatch?.[1]?.trim() || "");
-
-      if (contact) {
-        const savedMsg = {
-          id: uid(),
-          contactId: contact.id,
-          direction: "out",
-          text: draftMatch?.[1]?.trim() || text.trim(),
-          date: now(),
-          platform,
-        };
-        db.upsert("messages", savedMsg);
-        // Advance stage
-        const contacts = db.getAll("contacts");
-        const ci = contacts.findIndex(c => c.id === contact.id);
-        if (ci >= 0 && contacts[ci].stage === "new_enquiry") {
-          contacts[ci].stage = "replied";
-          contacts[ci].lastActionDate = now();
-          db.save("contacts", contacts);
-        }
-        onSaved?.();
-      }
-
-      setStep("draft");
-    } catch (e) {
-      setError("Couldn't generate — try again");
-    }
-    setLoading(false);
-  };
-
-  const answerQuestion = (q, a) => {
-    const next = { ...answers, [q]: a };
-    setAnswers(next);
-    if (currentQ + 1 >= aiQuestions.length) {
-      generateDraft(next);
+  const savePerson = (updates) => {
+    const people = db.getAll("people");
+    const existing = people.find(p => p.id === currentPerson?.id);
+    if (existing) {
+      const merged = { ...existing, ...updates };
+      db.upsert("people", merged);
+      setCurrentPerson(merged);
+      onPersonUpdated?.();
+      return merged;
     } else {
-      setCurrentQ(currentQ + 1);
+      const newP = { id: uid(), createdAt: nowStr(), lastActionDate: nowStr(), stage: "new_enquiry", messages: [], ...updates };
+      db.upsert("people", newP);
+      setCurrentPerson(newP);
+      onPersonUpdated?.();
+      return newP;
     }
   };
 
-  // STEP: type selection
-  if (step === "type") {
+  const analyseMessage = async () => {
+    if (!rawMessage.trim()) return;
+    setScreen("analysing");
+    const prompt = `You are helping Freddie, a dog walker, analyse an enquiry on ${platform}.
+Enquiry type: ${enquiryType.label}
+Message: """${rawMessage}"""
+
+Extract all visible info. Identify what is genuinely missing.
+Reply with ONLY valid JSON:
+{
+  "extracted": { "client_name": null, "dog_name": null, "service": null, "dates": null, "location": null, "rate": null, "recurring": null, "notes": null },
+  "questions": [{ "field": "field_name", "question": "friendly question", "hint": "short hint", "required": true }]
+}
+Rules:
+- Only ask about genuinely missing fields
+- dog_name: if missing, hint "Check the ${platform} profile or type unknown", required: false
+- location: if missing, required: true
+- rate: ONLY ask if platform is "Direct" or "Other". NEVER for Rover or Bark
+${enquiryType.id === "existing_client" ? "- Existing client — minimal questions, skip rate/service" : ""}
+- questions can be empty []`;
+    try {
+      const result = await callClaudeJSON(prompt);
+      setExtracted(result.extracted || {});
+      setDynamicQs(result.questions || []);
+      setQStep(0); setQAnswers({});
+      setScreen("summary");
+    } catch { setScreen("error"); }
+  };
+
+  const generateReply = async (finalAnswers) => {
+    setScreen("loading");
+    const allData = { ...extracted, ...finalAnswers };
+    const context = Object.entries(allData).filter(([, v]) => v && v !== "null").map(([k, v]) => `${k}: ${v}`).join("\n");
+    const history = (currentPerson?.messages || []).map(m => `${m.role === "client" ? "Client" : "Freddie"}: ${m.text || m.draft}`).join("\n\n");
+
+    const prompt = `${SYSTEM_PROMPTS[enquiryType.id]}
+Platform: ${platform}
+Original message: ${rawMessage}
+${history ? `\nConversation so far:\n${history}` : ""}
+Known information:\n${context || "(none)"}`;
+
+    try {
+      const raw = await callClaude(prompt, 1000);
+      const parsed = parseSections(raw);
+      const draftSection = parsed.find(s => s.key === "draft");
+      setSections(parsed);
+      setDraftText(draftSection?.content || raw);
+
+      const clientMsg = { role: "client", text: rawMessage, date: nowStr() };
+      const extra = parsed.find(s => s.key === "extra1");
+      const freddieMsg = { role: "freddie", draft: draftSection?.content || raw, questions: extra?.content || null, questionsLabel: extra?.label || null, date: nowStr() };
+
+      const name = allData.client_name && allData.client_name !== "null" ? allData.client_name : currentPerson?.name || "Unknown";
+      savePerson({
+        name,
+        platform,
+        stage: currentPerson?.stage === "new_enquiry" ? "replied" : (currentPerson?.stage || "replied"),
+        lastActionDate: nowStr(),
+        extracted: allData,
+        messages: [...(currentPerson?.messages || []), clientMsg, freddieMsg],
+        serviceType: allData.service || currentPerson?.serviceType,
+        address: allData.location || currentPerson?.address,
+      });
+      setScreen("result");
+    } catch { setScreen("error"); }
+  };
+
+  const generateFollowUp = async () => {
+    if (!followUpMsg.trim() || !currentPerson) return;
+    setScreen("loading");
+    const history = (currentPerson.messages || []).map(m => `${m.role === "client" ? "Client" : "Freddie"}: ${m.text || m.draft}`).join("\n\n");
+    const known = Object.entries(currentPerson.extracted || {}).filter(([, v]) => v && v !== "null").map(([k, v]) => `${k}: ${v}`).join("\n");
+
+    const prompt = `You are helping Freddie, a dog walker, reply to a follow-up message.
+Conversation so far:\n${history}
+Client's latest message: "${followUpMsg}"
+Known about this client:\n${known || "(not much yet)"}
+Write a warm, natural reply. Don't re-introduce. Sign off as Freddie. British English.
+Format with:
+DRAFT REPLY
+ONE TIP`;
+
+    try {
+      const raw = await callClaude(prompt, 1000);
+      const parsed = parseSections(raw);
+      const draftSection = parsed.find(s => s.key === "draft");
+      setSections(parsed);
+      setDraftText(draftSection?.content || raw);
+      const clientMsg = { role: "client", text: followUpMsg, date: nowStr() };
+      const extra = parsed.find(s => s.key === "extra1");
+      const freddieMsg = { role: "freddie", draft: draftSection?.content || raw, questions: extra?.content || null, date: nowStr() };
+      savePerson({ messages: [...(currentPerson.messages || []), clientMsg, freddieMsg], lastActionDate: nowStr() });
+      setFollowUpMsg("");
+      setScreen("result");
+    } catch { showToast("Couldn't generate — try again"); setScreen("thread"); }
+  };
+
+  const nextQ = () => {
+    if (!qInput.trim()) return;
+    const q = dynamicQs[qStep];
+    const next = { ...qAnswers, [q.field]: qInput.trim() };
+    setQAnswers(next); setQInput("");
+    if (qStep < dynamicQs.length - 1) { setQStep(q => q + 1); setTimeout(() => inputRef.current?.focus(), 80); }
+    else generateReply(next);
+  };
+
+  const skipQ = () => {
+    const q = dynamicQs[qStep];
+    const next = { ...qAnswers, [q.field]: "unknown" };
+    setQAnswers(next); setQInput("");
+    if (qStep < dynamicQs.length - 1) setQStep(q => q + 1);
+    else generateReply(next);
+  };
+
+  const currentQ = dynamicQs[qStep];
+
+  /* ── THREAD */
+  if (screen === "thread") {
+    const msgs = currentPerson?.messages || [];
     return (
-      <div>
+      <div className="fade-up">
         <BackBtn onBack={onBack} />
-        <div className="page-header mb-16">
-          <div className="page-title">Message Tool</div>
-          {contact && <div className="page-sub">{contact.name}</div>}
-        </div>
-        <div className="section-label">What kind of message?</div>
-        <div style={{ padding: "0 16px", display: "flex", flexDirection: "column", gap: 10 }}>
-          {ENQUIRY_TYPES.map(t => (
-            <div key={t.id} className="card card-tap" onClick={() => {
-              setEnquiryType(t.id);
-              if (contact?.platform) { setPlatform(contact.platform); setStep("context"); }
-              else setStep("platform");
-            }}>
-              <div className="row">
-                <span style={{ fontSize: 24 }}>{t.icon}</span>
-                <div className="col flex-1">
-                  <div style={{ fontWeight: 600, fontSize: 15 }}>{t.label}</div>
-                  <div className="text-sm text-muted">{t.desc}</div>
+        <div style={{ padding: "0 16px 16px" }}>
+
+          {/* What we know */}
+          {currentPerson?.extracted && Object.values(currentPerson.extracted).some(v => v && v !== "null") && (
+            <>
+              <div className="section-label">WHAT WE KNOW</div>
+              <div className="card" style={{ marginLeft: 0, marginRight: 0 }}>
+                {Object.entries(FIELD_LABELS).map(([field, meta]) => {
+                  const val = currentPerson.extracted[field];
+                  if (!val || val === "null") return null;
+                  return (
+                    <div key={field} className="found-row">
+                      <span style={{ fontSize: 16, width: 22, flexShrink: 0 }}>{meta.icon}</span>
+                      <div className="flex-1">
+                        <div style={{ fontSize: 11, color: "var(--muted2)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>{meta.label}</div>
+                        <div style={{ fontSize: 13, color: "#c8d0f0", marginTop: 2 }}>{val}</div>
+                      </div>
+                      <span className="text-green">✓</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+
+          {/* Conversation */}
+          {msgs.length > 0 && <>
+            <div className="section-label mt-16">CONVERSATION</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+              {msgs.map((msg, i) => (
+                <div key={i}>
+                  <div style={{ fontSize: 11, color: "var(--muted2)", marginBottom: 5, textAlign: msg.role === "freddie" ? "right" : "left" }}>
+                    {msg.role === "client" ? currentPerson?.name || "Client" : "Freddie"} · {fmtDate(msg.date)}
+                  </div>
+                  {msg.role === "client" ? (
+                    <div className="bubble-in">{msg.text}</div>
+                  ) : (
+                    <div>
+                      <div className="bubble-out" style={{ whiteSpace: "pre-wrap" }}>{msg.draft || msg.text}</div>
+                      {msg.questions && (
+                        <div className="double-check-box" style={{ marginLeft: "auto", maxWidth: "82%" }}>
+                          <div style={{ fontSize: 11, color: "var(--green)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 5 }}>✅ Double check you've asked</div>
+                          <div style={{ fontSize: 12, color: "#a8d5b5", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{msg.questions}</div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
-                <span className="text-muted">›</span>
-              </div>
+              ))}
+            </div>
+          </>}
+
+          {/* Follow-up */}
+          <div className="card mt-16" style={{ marginLeft: 0, marginRight: 0 }}>
+            <div className="section-label" style={{ paddingLeft: 0, marginTop: 0 }}>THEIR LATEST MESSAGE</div>
+            <div className="text-sm text-muted mb-8">Paste their reply — I'll draft a response with full context.</div>
+            <textarea className="input" rows={4} value={followUpMsg} onChange={e => setFollowUpMsg(e.target.value)} placeholder="Paste their latest message here..." />
+            <button className="btn btn-primary mt-8" disabled={!followUpMsg.trim()} style={{ opacity: followUpMsg.trim() ? 1 : 0.4 }} onClick={generateFollowUp}>Generate Follow-up ✨</button>
+          </div>
+
+          {/* New message type */}
+          <div className="section-label mt-16">NEW MESSAGE TYPE</div>
+          {ENQUIRY_TYPES.map(t => (
+            <div key={t.id} className="type-card" onClick={() => { setEnquiryType(t); setRawMessage(""); setScreen("paste"); }}>
+              <div style={{ width: 36, height: 36, borderRadius: 10, background: t.color + "22", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, flexShrink: 0 }}>{t.icon}</div>
+              <div className="flex-1"><div style={{ fontWeight: 600, fontSize: 14 }}>{t.label}</div><div className="text-xs text-muted">{t.desc}</div></div>
+              <span className="text-muted">›</span>
+            </div>
+          ))}
+        </div>
+        {toast && <div className="toast">{toast}</div>}
+      </div>
+    );
+  }
+
+  /* ── TYPE */
+  if (screen === "type") {
+    return (
+      <div className="fade-up">
+        <BackBtn onBack={onBack} />
+        <div style={{ padding: "0 16px 24px" }}>
+          <div className="page-title mb-4">New Message</div>
+          <div className="page-sub mb-16">What kind of message is this?</div>
+          {ENQUIRY_TYPES.map(t => (
+            <div key={t.id} className="type-card" onClick={() => { setEnquiryType(t); setScreen(person?.platform ? "paste" : "platform"); }}>
+              <div style={{ width: 44, height: 44, borderRadius: 12, background: t.color + "22", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22, flexShrink: 0 }}>{t.icon}</div>
+              <div className="flex-1"><div style={{ fontWeight: 700, fontSize: 15 }}>{t.label}</div><div className="text-sm text-muted">{t.desc}</div></div>
+              <span style={{ color: t.color, fontSize: 18 }}>›</span>
             </div>
           ))}
         </div>
@@ -562,21 +589,19 @@ Maximum 3 questions. If none needed, return { "questions": [] }`);
     );
   }
 
-  // STEP: platform
-  if (step === "platform") {
+  /* ── PLATFORM */
+  if (screen === "platform") {
     return (
-      <div>
-        <BackBtn onBack={() => setStep("type")} />
-        <div className="page-header mb-16">
-          <div className="page-title">Which Platform?</div>
-        </div>
-        <div style={{ padding: "0 16px", display: "flex", flexDirection: "column", gap: 10 }}>
+      <div className="fade-up">
+        <BackBtn onBack={() => setScreen("type")} />
+        <div style={{ padding: "0 16px 24px" }}>
+          <div className="page-title mb-4">Which Platform?</div>
+          <div className="page-sub mb-16">Where did they message Freddie?</div>
           {PLATFORMS.map(p => (
-            <div key={p} className="card card-tap" onClick={() => { setPlatform(p); setStep("context"); }}>
-              <div className="row-between">
-                <span style={{ fontWeight: 600, fontSize: 16 }}>{p}</span>
-                {(p === "Rover" || p === "Bark") && <span className="badge badge-muted">Platform sets rates</span>}
-              </div>
+            <div key={p} className="type-card" onClick={() => { setPlatform(p); setScreen("paste"); }}>
+              <div style={{ fontWeight: 700, fontSize: 16, flex: 1 }}>{p}</div>
+              {(p === "Rover" || p === "Bark") && <span className="badge badge-muted">Platform sets rates</span>}
+              <span className="text-muted">›</span>
             </div>
           ))}
         </div>
@@ -584,104 +609,169 @@ Maximum 3 questions. If none needed, return { "questions": [] }`);
     );
   }
 
-  // STEP: context (paste message)
-  if (step === "context") {
+  /* ── PASTE */
+  if (screen === "paste") {
     return (
-      <div>
-        <BackBtn onBack={() => setStep(contact?.platform ? "type" : "platform")} />
-        <div className="page-header mb-16">
-          <div className="page-title">Their Message</div>
-          <div className="page-sub">Paste what they sent — or leave blank for a proactive message</div>
-        </div>
-        <div style={{ padding: "0 16px" }}>
-          <textarea
-            className="input"
-            rows={6}
-            placeholder="Paste their message here..."
-            value={messageText}
-            onChange={e => setMessageText(e.target.value)}
-          />
-          <div className="mt-16">
-            <button className="btn btn-primary" onClick={analyseAndQuestion} disabled={loading}>
-              {loading ? <Spinner /> : "Next →"}
-            </button>
-          </div>
-          {error && <div className="text-orange text-sm mt-8">{error}</div>}
+      <div className="fade-up">
+        <BackBtn onBack={() => setScreen(person?.platform ? "type" : "platform")} />
+        <div style={{ padding: "0 16px 24px" }}>
+          <div style={{ fontSize: 11, color: typeColor, fontWeight: 700, letterSpacing: 0.5, marginBottom: 8 }}>STEP 1 OF 3 — THE MESSAGE</div>
+          <div className="page-title mb-4">Paste their message</div>
+          <div className="page-sub mb-16">Copy from {platform} and paste here. More detail = fewer questions.</div>
+          <textarea ref={inputRef} className="input" rows={7} value={rawMessage} onChange={e => setRawMessage(e.target.value)} placeholder={`Paste the message from ${platform} here...`} autoFocus />
+          <button className="btn btn-primary mt-12" disabled={!rawMessage.trim()} style={{ background: rawMessage.trim() ? typeColor : undefined, opacity: rawMessage.trim() ? 1 : 0.4 }} onClick={analyseMessage}>
+            Analyse Message →
+          </button>
         </div>
       </div>
     );
   }
 
-  // STEP: questions
-  if (step === "questions") {
-    const q = aiQuestions[currentQ];
+  /* ── ANALYSING */
+  if (screen === "analysing") {
     return (
-      <div>
-        <BackBtn onBack={() => setStep("context")} />
-        <div className="page-header mb-8">
-          <div className="page-title">Quick Q</div>
-        </div>
-        <div className="step-indicator">{currentQ + 1} of {aiQuestions.length}</div>
-        <div className="progress-dots">
-          {aiQuestions.map((_, i) => <div key={i} className={`progress-dot ${i <= currentQ ? "active" : ""}`} />)}
-        </div>
-        <div style={{ padding: "0 16px" }}>
-          <div className="card" style={{ marginLeft: 0, marginRight: 0 }}>
-            <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 6 }}>{q.q}</div>
-            {q.hint && <div className="text-sm text-muted">{q.hint}</div>}
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "60vh", gap: 16 }}>
+        <Spinner large />
+        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, letterSpacing: 2, color: "var(--muted)" }}>READING THE MESSAGE...</div>
+        <div className="text-sm text-muted">Working out what I know and what to ask</div>
+      </div>
+    );
+  }
+
+  /* ── SUMMARY */
+  if (screen === "summary") {
+    const foundCount = Object.values(extracted).filter(v => v && v !== "null").length;
+    return (
+      <div className="fade-up">
+        <BackBtn onBack={() => setScreen("paste")} />
+        <div style={{ padding: "0 16px 24px" }}>
+          <div style={{ fontSize: 11, color: typeColor, fontWeight: 700, letterSpacing: 0.5, marginBottom: 8 }}>STEP 2 OF 3 — WHAT I FOUND</div>
+          <div className="page-title mb-4">Here's what I got</div>
+          <div className="page-sub mb-16">Review, then I'll ask for anything missing.</div>
+
+          <div className="card" style={{ marginLeft: 0, marginRight: 0, marginBottom: 14 }}>
+            {foundCount === 0
+              ? <div className="text-sm text-muted">Couldn't extract much — questions will fill in the gaps.</div>
+              : Object.entries(FIELD_LABELS).map(([field, meta]) => {
+                const val = extracted[field];
+                if (!val || val === "null") return null;
+                return (
+                  <div key={field} className="found-row">
+                    <span style={{ fontSize: 18, width: 26, flexShrink: 0 }}>{meta.icon}</span>
+                    <div className="flex-1">
+                      <div style={{ fontSize: 11, color: "var(--muted2)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>{meta.label}</div>
+                      <div style={{ fontSize: 14, color: "#c8d0f0", marginTop: 2 }}>{val}</div>
+                    </div>
+                    <span className="text-green" style={{ fontSize: 16 }}>✓</span>
+                  </div>
+                );
+              })
+            }
+            {dynamicQs.length > 0 && (
+              <div style={{ marginTop: 14 }}>
+                <div style={{ fontSize: 11, color: "var(--muted2)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>Still need ({dynamicQs.length})</div>
+                <div style={{ display: "flex", flexWrap: "wrap" }}>
+                  {dynamicQs.map(q => <span key={q.field} className="missing-chip">{FIELD_LABELS[q.field]?.icon} {FIELD_LABELS[q.field]?.label || q.field}</span>)}
+                </div>
+              </div>
+            )}
+            {dynamicQs.length === 0 && (
+              <div style={{ marginTop: 12, background: "rgba(0,184,148,0.08)", border: "1px solid rgba(0,184,148,0.2)", borderRadius: 8, padding: "10px 12px", fontSize: 13, color: "var(--green)", fontWeight: 600 }}>
+                Got everything — ready to generate!
+              </div>
+            )}
           </div>
-          <div className="mt-16">
-            <textarea
-              className="input"
-              rows={3}
-              placeholder="Type your answer..."
-              onKeyDown={e => {
-                if (e.key === "Enter" && !e.shiftKey && e.target.value.trim()) {
-                  e.preventDefault();
-                  answerQuestion(q.q, e.target.value.trim());
-                  e.target.value = "";
-                }
-              }}
-            />
-            <button className="btn btn-primary mt-8" onClick={e => {
-              const ta = e.target.closest("div").previousElementSibling;
-              if (ta.value.trim()) { answerQuestion(q.q, ta.value.trim()); ta.value = ""; }
-            }}>
-              {loading ? <Spinner /> : currentQ + 1 >= aiQuestions.length ? "Generate Draft" : "Next →"}
-            </button>
-            <button className="btn btn-ghost mt-8" onClick={() => answerQuestion(q.q, "unknown")}>
-              Skip this one
-            </button>
-          </div>
-          {error && <div className="text-orange text-sm mt-8">{error}</div>}
+
+          <button className="btn btn-primary" style={{ background: typeColor }} onClick={() => dynamicQs.length > 0 ? setScreen("questions") : generateReply({})}>
+            {dynamicQs.length > 0 ? `Answer ${dynamicQs.length} question${dynamicQs.length !== 1 ? "s" : ""} →` : "Generate Reply ✨"}
+          </button>
         </div>
       </div>
     );
   }
 
-  // STEP: draft
-  if (step === "draft") {
+  /* ── QUESTIONS */
+  if (screen === "questions" && currentQ) {
     return (
-      <div>
-        <BackBtn onBack={onBack} label="Done" />
-        <div className="page-header mb-16">
-          <div className="page-title">Draft Reply</div>
-          <div className="page-sub">Edit, then copy and send</div>
-        </div>
-        <div style={{ padding: "0 16px" }}>
-          <textarea
-            className="input"
-            rows={12}
-            value={editedDraft}
-            onChange={e => setEditedDraft(e.target.value)}
-          />
-          <CopyBtn text={editedDraft} />
-          {doubleCheck && (
-            <div className="highlight-box mt-12">
-              <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 8, color: "var(--yellow)" }}>⚠️ Double check before sending</div>
-              <div style={{ fontSize: 13, lineHeight: 1.7, whiteSpace: "pre-wrap", color: "var(--muted)" }}>{doubleCheck}</div>
+      <div className="fade-up">
+        <BackBtn onBack={() => qStep === 0 ? setScreen("summary") : setQStep(q => q - 1)} />
+        <div style={{ padding: "0 16px 24px" }}>
+          <div style={{ fontSize: 11, color: typeColor, fontWeight: 700, letterSpacing: 0.5, marginBottom: 12 }}>QUESTION {qStep + 1} OF {dynamicQs.length}</div>
+          <div className="progress-track"><div className="progress-fill" style={{ width: `${(qStep / dynamicQs.length) * 100}%`, background: typeColor }} /></div>
+          <div style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.3, marginBottom: 6 }}>{currentQ.question}</div>
+          <div className="text-sm text-muted mb-16">{currentQ.hint}</div>
+          <input ref={inputRef} className="input" type="text" value={qInput} onChange={e => setQInput(e.target.value)} placeholder="Your answer..." onKeyDown={e => e.key === "Enter" && nextQ()} autoFocus />
+          {qStep > 0 && (
+            <div style={{ marginTop: 10, padding: "10px 12px", background: "var(--bg)", borderRadius: 8 }}>
+              {dynamicQs.slice(0, qStep).map(q => (
+                <div key={q.field} className="text-xs text-muted">{FIELD_LABELS[q.field]?.label || q.field}: <span style={{ color: "var(--text)" }}>{qAnswers[q.field]}</span></div>
+              ))}
             </div>
           )}
+          <div className="btn-row mt-12" style={{ padding: 0 }}>
+            {!currentQ.required && <button className="btn btn-ghost" onClick={skipQ}>Skip</button>}
+            <button className="btn btn-primary" disabled={!qInput.trim()} style={{ background: qInput.trim() ? typeColor : undefined, opacity: qInput.trim() ? 1 : 0.4 }} onClick={nextQ}>
+              {qStep === dynamicQs.length - 1 ? "Generate Reply ✨" : "Next →"}
+            </button>
+          </div>
+          <div className="text-xs text-muted mt-8" style={{ textAlign: "center" }}>Press Enter to continue</div>
+        </div>
+      </div>
+    );
+  }
+
+  /* ── LOADING */
+  if (screen === "loading") {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "60vh", gap: 16 }}>
+        <Spinner large />
+        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, letterSpacing: 2, color: "var(--muted)" }}>CRAFTING YOUR REPLY...</div>
+        <div className="text-sm text-muted">Putting it all together</div>
+      </div>
+    );
+  }
+
+  /* ── ERROR */
+  if (screen === "error") {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "60vh", gap: 16, padding: "0 24px", textAlign: "center" }}>
+        <div style={{ fontSize: 44 }}>⚠️</div>
+        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--orange)" }}>SOMETHING WENT WRONG</div>
+        <div className="text-sm text-muted">Could not generate the reply — usually temporary. Try again.</div>
+        <button className="btn btn-primary" onClick={() => generateReply(qAnswers)}>Try Again</button>
+        <button className="btn btn-ghost mt-4" onClick={onBack}>Go Back</button>
+      </div>
+    );
+  }
+
+  /* ── RESULT */
+  if (screen === "result" && sections.length > 0) {
+    const extra = sections.find(s => s.key === "extra1");
+    return (
+      <div className="fade-up">
+        <BackBtn onBack={() => setScreen("thread")} label="View Thread" />
+        <div style={{ padding: "0 16px 24px" }}>
+          <div className="row mb-16">
+            <div style={{ width: 38, height: 38, borderRadius: 10, background: typeColor + "22", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>{enquiryType?.icon}</div>
+            <div><div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 15, letterSpacing: 1, color: typeColor }}>{enquiryType?.label}</div><div className="text-xs text-muted">{platform} · {new Date().toLocaleDateString("en-GB")}</div></div>
+          </div>
+
+          <div className="section-label" style={{ paddingLeft: 0, marginTop: 0 }}>DRAFT REPLY</div>
+          <div className="text-xs text-muted mb-8">Tap to edit before copying</div>
+          <textarea className="draft-box" value={draftText} onChange={e => setDraftText(e.target.value)} rows={9} />
+          <CopyBtn text={draftText} />
+
+          {extra && (
+            <div className="double-check-box mt-12">
+              <div style={{ fontSize: 11, color: "var(--green)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>✅ Double check you've asked</div>
+              <div style={{ fontSize: 13, color: "#a8d5b5", lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{extra.content}</div>
+            </div>
+          )}
+
+          <div className="btn-row mt-16" style={{ padding: 0 }}>
+            <button className="btn btn-ghost" onClick={() => setScreen("thread")}>View Thread</button>
+            <button className="btn btn-ghost" onClick={onBack}>Done</button>
+          </div>
         </div>
       </div>
     );
@@ -691,327 +781,122 @@ Maximum 3 questions. If none needed, return { "questions": [] }`);
 }
 
 /* ─────────────────────────────────────────────
-   DOG PROFILE WIZARD
+   DOG WIZARD
 ───────────────────────────────────────────── */
-function DogWizard({ contactId, existingDog, onSave, onBack }) {
-  const init = existingDog || { id: uid(), contactId, name: "", breed: "", age: "", size: "", goodWithDogs: "", goodOnLead: "", healthIssues: "No", healthNotes: "", spooks: "", vet: "", vetPhone: "", personality: "", meetGreetResult: "", meetGreetDate: "" };
+function DogWizard({ personId, existingDog, onSave, onBack }) {
+  const init = existingDog || { id: uid(), personId, name: "", breed: "", age: "", size: "", goodWithDogs: "", goodOnLead: "", healthIssues: "No", healthNotes: "", spooks: "", vet: "", vetPhone: "", personality: "", meetGreetResult: "" };
   const [dog, setDog] = useState(init);
   const [step, setStep] = useState(0);
-
   const set = (k, v) => setDog(d => ({ ...d, [k]: v }));
-
   const steps = [
-    {
-      title: "Dog's Name", content: (
-        <div className="input-group">
-          <input className="input" placeholder="e.g. Buddy" value={dog.name} onChange={e => set("name", e.target.value)} style={{ fontSize: 20, fontWeight: 600 }} />
-        </div>
-      ), valid: !!dog.name.trim()
-    },
-    {
-      title: "Breed & Age", content: (
-        <>
-          <div className="input-group"><div className="input-label">Breed</div><input className="input" placeholder="e.g. Labrador" value={dog.breed} onChange={e => set("breed", e.target.value)} /></div>
-          <div className="input-group"><div className="input-label">Age</div><input className="input" placeholder="e.g. 3 years" value={dog.age} onChange={e => set("age", e.target.value)} /></div>
-        </>
-      ), valid: true
-    },
-    {
-      title: "Size", content: (
-        <div className="chip-row">
-          {["S", "M", "L"].map(s => <Chip key={s} label={s === "S" ? "Small" : s === "M" ? "Medium" : "Large"} active={dog.size === s} onClick={() => set("size", s)} />)}
-        </div>
-      ), valid: !!dog.size
-    },
-    {
-      title: "Good with other dogs?", content: (
-        <div className="chip-row">
-          {["Yes", "No", "Unpredictable"].map(v => <Chip key={v} label={v} active={dog.goodWithDogs === v} onClick={() => set("goodWithDogs", v)} color={v === "Yes" ? "green" : v === "No" ? "orange" : "yellow"} />)}
-        </div>
-      ), valid: !!dog.goodWithDogs
-    },
-    {
-      title: "Good on lead?", content: (
-        <div className="chip-row">
-          {["Yes", "Fine", "Pulls"].map(v => <Chip key={v} label={v} active={dog.goodOnLead === v} onClick={() => set("goodOnLead", v)} color={v === "Yes" ? "green" : v === "Fine" ? "purple" : "orange"} />)}
-        </div>
-      ), valid: !!dog.goodOnLead
-    },
-    {
-      title: "Any health issues?", content: (
-        <>
-          <div className="chip-row mb-12">
-            {["No", "Yes"].map(v => <Chip key={v} label={v} active={dog.healthIssues === v} onClick={() => set("healthIssues", v)} color={v === "No" ? "green" : "orange"} />)}
-          </div>
-          {dog.healthIssues === "Yes" && <textarea className="input" rows={3} placeholder="Describe health issues..." value={dog.healthNotes} onChange={e => set("healthNotes", e.target.value)} />}
-        </>
-      ), valid: !!dog.healthIssues
-    },
-    {
-      title: "Anything that spooks them?", content: (
-        <textarea className="input" rows={3} placeholder="e.g. loud noises, bikes, other dogs... (optional)" value={dog.spooks} onChange={e => set("spooks", e.target.value)} />
-      ), valid: true
-    },
-    {
-      title: "Vet details", content: (
-        <>
-          <div className="input-group"><div className="input-label">Vet name</div><input className="input" placeholder="e.g. Winchester Vets" value={dog.vet} onChange={e => set("vet", e.target.value)} /></div>
-          <div className="input-group"><div className="input-label">Vet phone</div><input className="input" placeholder="01962..." type="tel" value={dog.vetPhone} onChange={e => set("vetPhone", e.target.value)} /></div>
-        </>
-      ), valid: true
-    },
-    {
-      title: "Personality notes", content: (
-        <textarea className="input" rows={4} placeholder="What's their character like? Any quirks? (optional)" value={dog.personality} onChange={e => set("personality", e.target.value)} />
-      ), valid: true
-    },
-    {
-      title: "How did the meet & greet go?", content: (
-        <div className="chip-row">
-          {["Great", "Fine", "Concerns"].map(v => <Chip key={v} label={v} active={dog.meetGreetResult === v} onClick={() => set("meetGreetResult", v)} color={v === "Great" ? "green" : v === "Fine" ? "purple" : "orange"} />)}
-        </div>
-      ), valid: true
-    },
+    { title: "Dog's Name", body: <input className="input" placeholder="e.g. Buddy" value={dog.name} onChange={e => set("name", e.target.value)} style={{ fontSize: 20, fontWeight: 700 }} />, valid: !!dog.name.trim() },
+    { title: "Breed & Age", body: <><div className="input-group"><div className="input-label">Breed</div><input className="input" placeholder="e.g. Labrador" value={dog.breed} onChange={e => set("breed", e.target.value)} /></div><div className="input-group"><div className="input-label">Age</div><input className="input" placeholder="e.g. 3 years" value={dog.age} onChange={e => set("age", e.target.value)} /></div></>, valid: true },
+    { title: "Size", body: <div className="chip-row">{["S","M","L"].map(s => <Chip key={s} label={s==="S"?"Small":s==="M"?"Medium":"Large"} active={dog.size===s} onClick={() => set("size",s)} />)}</div>, valid: !!dog.size },
+    { title: "Good with other dogs?", body: <div className="chip-row">{["Yes","No","Unpredictable"].map(v => <Chip key={v} label={v} active={dog.goodWithDogs===v} color={v==="Yes"?"green":v==="No"?"orange":"yellow"} onClick={() => set("goodWithDogs",v)} />)}</div>, valid: !!dog.goodWithDogs },
+    { title: "Good on lead?", body: <div className="chip-row">{["Yes","Fine","Pulls"].map(v => <Chip key={v} label={v} active={dog.goodOnLead===v} color={v==="Yes"?"green":v==="Pulls"?"orange":"purple"} onClick={() => set("goodOnLead",v)} />)}</div>, valid: !!dog.goodOnLead },
+    { title: "Any health issues?", body: <><div className="chip-row mb-8">{["No","Yes"].map(v => <Chip key={v} label={v} active={dog.healthIssues===v} color={v==="No"?"green":"orange"} onClick={() => set("healthIssues",v)} />)}</div>{dog.healthIssues==="Yes"&&<textarea className="input" rows={3} placeholder="Describe..." value={dog.healthNotes} onChange={e => set("healthNotes",e.target.value)} />}</>, valid: !!dog.healthIssues },
+    { title: "Anything that spooks them?", body: <textarea className="input" rows={3} placeholder="e.g. loud noises, bikes... (optional)" value={dog.spooks} onChange={e => set("spooks",e.target.value)} />, valid: true },
+    { title: "Vet details", body: <><div className="input-group"><div className="input-label">Vet name</div><input className="input" placeholder="e.g. Winchester Vets" value={dog.vet} onChange={e => set("vet",e.target.value)} /></div><div className="input-group"><div className="input-label">Vet phone</div><input className="input" type="tel" placeholder="01962..." value={dog.vetPhone} onChange={e => set("vetPhone",e.target.value)} /></div></>, valid: true },
+    { title: "Personality notes", body: <textarea className="input" rows={4} placeholder="What's their character like? (optional)" value={dog.personality} onChange={e => set("personality",e.target.value)} />, valid: true },
+    { title: "How did the meet & greet go?", body: <div className="chip-row">{["Great","Fine","Concerns"].map(v => <Chip key={v} label={v} active={dog.meetGreetResult===v} color={v==="Great"?"green":v==="Fine"?"purple":"orange"} onClick={() => set("meetGreetResult",v)} />)}</div>, valid: true },
   ];
-
-  const s = steps[step];
-  const isLast = step === steps.length - 1;
-
+  const s = steps[step]; const isLast = step === steps.length - 1;
   return (
     <div>
-      <BackBtn onBack={step === 0 ? onBack : () => setStep(s => s - 1)} />
-      <div className="page-header mb-8">
-        <div className="page-title">{s.title}</div>
-      </div>
-      <div className="step-indicator">{step + 1} of {steps.length}</div>
-      <div className="progress-dots">
-        {steps.map((_, i) => <div key={i} className={`progress-dot ${i === step ? "active" : i < step ? "active" : ""}`} style={i < step ? { background: "var(--green)" } : {}} />)}
-      </div>
-      <div style={{ padding: "0 16px" }}>
-        {s.content}
-        <div className="mt-16">
-          <button className="btn btn-primary" disabled={!s.valid} onClick={() => {
-            if (isLast) { db.upsert("dogs", dog); onSave(dog); }
-            else setStep(s => s + 1);
-          }}>
-            {isLast ? "Save Dog Profile ✓" : "Next →"}
-          </button>
-          {!s.valid && <div className="text-sm text-muted mt-8" style={{ textAlign: "center" }}>Tap an option to continue</div>}
-        </div>
+      <BackBtn onBack={step === 0 ? onBack : () => setStep(p => p - 1)} />
+      <div style={{ padding: "0 16px 24px" }}>
+        <div style={{ fontSize: 11, color: "var(--purple)", fontWeight: 700, letterSpacing: 0.5, marginBottom: 8 }}>{step + 1} OF {steps.length}</div>
+        <div className="progress-track"><div className="progress-fill" style={{ width: `${(step / steps.length) * 100}%` }} /></div>
+        <div className="page-title mb-16">{s.title}</div>
+        {s.body}
+        <button className="btn btn-primary mt-16" disabled={!s.valid} onClick={() => { if (isLast) { db.upsert("dogs", dog); onSave(dog); } else setStep(p => p + 1); }}>
+          {isLast ? "Save Dog ✓" : "Next →"}
+        </button>
       </div>
     </div>
   );
 }
 
 /* ─────────────────────────────────────────────
-   CAT PROFILE WIZARD
+   CAT WIZARD
 ───────────────────────────────────────────── */
-function CatWizard({ contactId, existingCat, onSave, onBack }) {
-  const init = existingCat || { id: uid(), contactId, name: "", age: "", indoorOutdoor: "", feedingRoutine: "", litterNotes: "", medication: "No", medicationNotes: "", personality: "" };
+function CatWizard({ personId, existingCat, onSave, onBack }) {
+  const init = existingCat || { id: uid(), personId, name: "", age: "", indoorOutdoor: "", feedingRoutine: "", litterNotes: "", medication: "No", medicationNotes: "", personality: "" };
   const [cat, setCat] = useState(init);
   const [step, setStep] = useState(0);
   const set = (k, v) => setCat(c => ({ ...c, [k]: v }));
-
   const steps = [
-    { title: "Cat's Name", content: <input className="input" placeholder="e.g. Mochi" value={cat.name} onChange={e => set("name", e.target.value)} style={{ fontSize: 20, fontWeight: 600 }} />, valid: !!cat.name.trim() },
-    { title: "Age", content: <input className="input" placeholder="e.g. 4 years" value={cat.age} onChange={e => set("age", e.target.value)} />, valid: true },
-    { title: "Indoor / Outdoor?", content: <div className="chip-row">{["Indoor", "Outdoor", "Both"].map(v => <Chip key={v} label={v} active={cat.indoorOutdoor === v} onClick={() => set("indoorOutdoor", v)} />)}</div>, valid: !!cat.indoorOutdoor },
-    { title: "Feeding routine", content: <textarea className="input" rows={3} placeholder="e.g. Wet food twice a day — morning and evening..." value={cat.feedingRoutine} onChange={e => set("feedingRoutine", e.target.value)} />, valid: true },
-    { title: "Litter notes", content: <textarea className="input" rows={3} placeholder="e.g. Litter tray in bathroom, change every other day..." value={cat.litterNotes} onChange={e => set("litterNotes", e.target.value)} />, valid: true },
-    {
-      title: "Any medication?", content: (
-        <>
-          <div className="chip-row mb-12">{["No", "Yes"].map(v => <Chip key={v} label={v} active={cat.medication === v} onClick={() => set("medication", v)} color={v === "No" ? "green" : "orange"} />)}</div>
-          {cat.medication === "Yes" && <textarea className="input" rows={3} placeholder="What medication and how often?" value={cat.medicationNotes} onChange={e => set("medicationNotes", e.target.value)} />}
-        </>
-      ), valid: true
-    },
-    { title: "Personality notes", content: <textarea className="input" rows={4} placeholder="What are they like? Shy, affectionate, indoor only... (optional)" value={cat.personality} onChange={e => set("personality", e.target.value)} />, valid: true },
+    { title: "Cat's Name", body: <input className="input" placeholder="e.g. Mochi" value={cat.name} onChange={e => set("name",e.target.value)} style={{ fontSize: 20, fontWeight: 700 }} />, valid: !!cat.name.trim() },
+    { title: "Age", body: <input className="input" placeholder="e.g. 4 years" value={cat.age} onChange={e => set("age",e.target.value)} />, valid: true },
+    { title: "Indoor / Outdoor?", body: <div className="chip-row">{["Indoor","Outdoor","Both"].map(v => <Chip key={v} label={v} active={cat.indoorOutdoor===v} onClick={() => set("indoorOutdoor",v)} />)}</div>, valid: !!cat.indoorOutdoor },
+    { title: "Feeding routine", body: <textarea className="input" rows={3} placeholder="e.g. Wet food twice a day..." value={cat.feedingRoutine} onChange={e => set("feedingRoutine",e.target.value)} />, valid: true },
+    { title: "Litter notes", body: <textarea className="input" rows={3} placeholder="e.g. Litter tray in bathroom..." value={cat.litterNotes} onChange={e => set("litterNotes",e.target.value)} />, valid: true },
+    { title: "Any medication?", body: <><div className="chip-row mb-8">{["No","Yes"].map(v => <Chip key={v} label={v} active={cat.medication===v} color={v==="No"?"green":"orange"} onClick={() => set("medication",v)} />)}</div>{cat.medication==="Yes"&&<textarea className="input" rows={3} placeholder="What and how often?" value={cat.medicationNotes} onChange={e => set("medicationNotes",e.target.value)} />}</>, valid: true },
+    { title: "Personality notes", body: <textarea className="input" rows={4} placeholder="What are they like? (optional)" value={cat.personality} onChange={e => set("personality",e.target.value)} />, valid: true },
   ];
-
-  const s = steps[step];
-  const isLast = step === steps.length - 1;
-
+  const s = steps[step]; const isLast = step === steps.length - 1;
   return (
     <div>
-      <BackBtn onBack={step === 0 ? onBack : () => setStep(s => s - 1)} />
-      <div className="page-header mb-8"><div className="page-title">{s.title}</div></div>
-      <div className="step-indicator">{step + 1} of {steps.length}</div>
-      <div className="progress-dots">{steps.map((_, i) => <div key={i} className={`progress-dot ${i <= step ? "active" : ""}`} style={i < step ? { background: "var(--green)" } : {}} />)}</div>
-      <div style={{ padding: "0 16px" }}>
-        {s.content}
-        <div className="mt-16">
-          <button className="btn btn-primary" disabled={!s.valid} onClick={() => {
-            if (isLast) { db.upsert("cats", cat); onSave(cat); }
-            else setStep(s => s + 1);
-          }}>
-            {isLast ? "Save Cat Profile ✓" : "Next →"}
-          </button>
-        </div>
+      <BackBtn onBack={step === 0 ? onBack : () => setStep(p => p - 1)} />
+      <div style={{ padding: "0 16px 24px" }}>
+        <div style={{ fontSize: 11, color: "var(--purple)", fontWeight: 700, letterSpacing: 0.5, marginBottom: 8 }}>{step + 1} OF {steps.length}</div>
+        <div className="progress-track"><div className="progress-fill" style={{ width: `${(step / steps.length) * 100}%` }} /></div>
+        <div className="page-title mb-16">{s.title}</div>
+        {s.body}
+        <button className="btn btn-primary mt-16" disabled={!s.valid} onClick={() => { if (isLast) { db.upsert("cats", cat); onSave(cat); } else setStep(p => p + 1); }}>
+          {isLast ? "Save Cat ✓" : "Next →"}
+        </button>
       </div>
     </div>
   );
 }
 
 /* ─────────────────────────────────────────────
-   NEW CONTACT WIZARD (pipeline entry)
+   PERSON DETAIL
 ───────────────────────────────────────────── */
-function NewContactWizard({ onSave, onBack }) {
-  const [contact, setContact] = useState({ id: uid(), name: "", phone: "", address: "", postcode: "", platform: "", serviceType: "", notes: "", stage: "new_enquiry", createdAt: now(), lastActionDate: now() });
-  const [step, setStep] = useState(0);
-  const set = (k, v) => setContact(c => ({ ...c, [k]: v }));
-
-  const steps = [
-    { title: "Their Name", content: <input className="input" placeholder="Full name" value={contact.name} onChange={e => set("name", e.target.value)} style={{ fontSize: 20, fontWeight: 600 }} />, valid: !!contact.name.trim() },
-    { title: "Which Platform?", content: <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{PLATFORMS.map(p => <div key={p} className="card card-tap" style={{ margin: 0 }} onClick={() => set("platform", p)}><div className="row-between"><span style={{ fontWeight: 600 }}>{p}</span>{contact.platform === p && <span className="text-green">✓</span>}</div></div>)}</div>, valid: !!contact.platform },
-    { title: "What service?", content: <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{SERVICES.map(s => <div key={s.id} className="card card-tap" style={{ margin: 0 }} onClick={() => set("serviceType", s.id)}><div className="row"><span style={{ fontSize: 20 }}>{s.icon}</span><span style={{ fontWeight: 600 }}>{s.label}</span>{contact.serviceType === s.id && <span className="text-green ml-auto">✓</span>}</div></div>)}</div>, valid: !!contact.serviceType },
-    { title: "Phone number", content: <input className="input" placeholder="07..." type="tel" value={contact.phone} onChange={e => set("phone", e.target.value)} />, valid: true },
-    { title: "Address", content: <><input className="input mb-8" placeholder="Street address" value={contact.address} onChange={e => set("address", e.target.value)} /><input className="input" placeholder="Postcode" value={contact.postcode} onChange={e => set("postcode", e.target.value)} /></>, valid: true },
-    { title: "Any initial notes?", content: <textarea className="input" rows={4} placeholder="Anything useful to note... (optional)" value={contact.notes} onChange={e => set("notes", e.target.value)} />, valid: true },
-  ];
-
-  const s = steps[step];
-  const isLast = step === steps.length - 1;
-
-  return (
-    <div>
-      <BackBtn onBack={step === 0 ? onBack : () => setStep(s => s - 1)} />
-      <div className="page-header mb-8"><div className="page-title">New Enquiry</div><div className="page-sub">Add them to your pipeline</div></div>
-      <div className="step-indicator">{step + 1} of {steps.length}</div>
-      <div className="progress-dots">{steps.map((_, i) => <div key={i} className={`progress-dot ${i <= step ? "active" : ""}`} style={i < step ? { background: "var(--green)" } : {}} />)}</div>
-      <div style={{ padding: "0 16px" }}>
-        <div className="mb-8"><div style={{ fontSize: 18, fontWeight: 600, marginBottom: 12 }}>{s.title}</div>{s.content}</div>
-        <div className="mt-16">
-          <button className="btn btn-primary" disabled={!s.valid} onClick={() => {
-            if (isLast) { db.upsert("contacts", contact); onSave(contact); }
-            else setStep(s => s + 1);
-          }}>
-            {isLast ? "Add to Pipeline ✓" : "Next →"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ─────────────────────────────────────────────
-   NEW VISIT MODAL
-───────────────────────────────────────────── */
-function NewVisitModal({ onSave, onClose }) {
-  const contacts = db.getAll("contacts").filter(c => c.stage === "active" || c.stage === "first_walk_booked");
-  const allContacts = db.getAll("contacts");
-  const activeContacts = allContacts.filter(c => !["not_proceeding", "gone_quiet"].includes(c.stage));
-
-  const [visit, setVisit] = useState({ id: uid(), contactId: "", animalIds: [], serviceType: "dog_walk", date: today(), time: "09:00", duration: "30 min", status: "confirmed", paid: false, amount: "" });
-  const set = (k, v) => setVisit(v2 => ({ ...v2, [k]: v }));
-
-  const selectedContact = activeContacts.find(c => c.id === visit.contactId);
-  const dogs = visit.contactId ? db.getAll("dogs").filter(d => d.contactId === visit.contactId) : [];
-  const cats = visit.contactId ? db.getAll("cats").filter(d => d.contactId === visit.contactId) : [];
-
-  return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal-sheet">
-        <div className="modal-handle" />
-        <div className="modal-title">Book a Visit</div>
-
-        <div className="input-group">
-          <div className="input-label">Client</div>
-          <select className="input" value={visit.contactId} onChange={e => set("contactId", e.target.value)}>
-            <option value="">Select client...</option>
-            {activeContacts.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-        </div>
-
-        <div className="input-group">
-          <div className="input-label">Service</div>
-          <div className="chip-row">
-            {SERVICES.map(s => <Chip key={s.id} label={s.icon + " " + s.label} active={visit.serviceType === s.id} onClick={() => set("serviceType", s.id)} />)}
-          </div>
-        </div>
-
-        <div className="input-group">
-          <div className="input-label">Date</div>
-          <input className="input" type="date" value={visit.date} onChange={e => set("date", e.target.value)} />
-        </div>
-
-        <div className="input-group">
-          <div className="input-label">Time</div>
-          <input className="input" type="time" value={visit.time} onChange={e => set("time", e.target.value)} />
-        </div>
-
-        {(visit.serviceType === "dog_walk") && (
-          <div className="input-group">
-            <div className="input-label">Duration</div>
-            <div className="chip-row">
-              {DURATIONS.map(d => <Chip key={d} label={d} active={visit.duration === d} onClick={() => set("duration", d)} />)}
-            </div>
-          </div>
-        )}
-
-        <div className="btn-row mt-16">
-          <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" disabled={!visit.contactId || !visit.date} onClick={() => { db.upsert("visits", visit); onSave(visit); onClose(); }}>
-            Book Visit ✓
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ─────────────────────────────────────────────
-   CONTACT DETAIL VIEW
-───────────────────────────────────────────── */
-function ContactDetail({ contact, onBack, onUpdate }) {
-  const [view, setView] = useState("profile"); // profile | message | add_dog | add_cat | edit
-  const [editContact, setEditContact] = useState(contact);
-  const dogs = db.getAll("dogs").filter(d => d.contactId === contact.id);
-  const cats = db.getAll("cats").filter(c => c.contactId === contact.id);
-  const visits = db.getAll("visits").filter(v => v.contactId === contact.id).sort((a, b) => b.date.localeCompare(a.date));
-  const msgs = db.getAll("messages").filter(m => m.contactId === contact.id).sort((a, b) => a.date.localeCompare(b.date));
-
+function PersonDetail({ personId, onBack, onUpdate }) {
+  const [view, setView] = useState("profile");
   const [selectedDog, setSelectedDog] = useState(null);
   const [selectedCat, setSelectedCat] = useState(null);
   const [showMoveStage, setShowMoveStage] = useState(false);
+  const [tick, setTick] = useState(0);
 
-  const refreshed = db.getAll("contacts").find(c => c.id === contact.id) || contact;
+  const person = db.getAll("people").find(p => p.id === personId);
+  const dogs = db.getAll("dogs").filter(d => d.personId === personId);
+  const cats = db.getAll("cats").filter(c => c.personId === personId);
+  const visits = db.getAll("visits").filter(v => v.personId === personId).sort((a, b) => b.date.localeCompare(a.date));
 
-  if (view === "message") return <MessagingTool contact={refreshed} onBack={() => setView("profile")} onSaved={() => { onUpdate?.(); }} />;
-  if (view === "add_dog" || selectedDog) return <DogWizard contactId={contact.id} existingDog={selectedDog} onSave={() => { setSelectedDog(null); setView("profile"); onUpdate?.(); }} onBack={() => { setSelectedDog(null); setView("profile"); }} />;
-  if (view === "add_cat" || selectedCat) return <CatWizard contactId={contact.id} existingCat={selectedCat} onSave={() => { setSelectedCat(null); setView("profile"); onUpdate?.(); }} onBack={() => { setSelectedCat(null); setView("profile"); }} />;
+  if (!person) return <div><BackBtn onBack={onBack} /><div style={{ padding: 24 }} className="text-muted">Not found</div></div>;
+
+  const refresh = () => { setTick(t => t + 1); onUpdate?.(); };
 
   const moveStage = (stageId) => {
-    const contacts = db.getAll("contacts");
-    const idx = contacts.findIndex(c => c.id === contact.id);
-    if (idx >= 0) { contacts[idx].stage = stageId; contacts[idx].lastActionDate = now(); db.save("contacts", contacts); }
-    setShowMoveStage(false);
-    onUpdate?.();
-  };
-
-  const makeActive = () => {
-    const contacts = db.getAll("contacts");
-    const idx = contacts.findIndex(c => c.id === contact.id);
-    if (idx >= 0) { contacts[idx].stage = "active"; contacts[idx].lastActionDate = now(); db.save("contacts", contacts); }
-    onUpdate?.();
+    const all = db.getAll("people");
+    const idx = all.findIndex(p => p.id === personId);
+    if (idx >= 0) { all[idx].stage = stageId; all[idx].lastActionDate = nowStr(); db.set("people", all); }
+    setShowMoveStage(false); refresh();
   };
 
   const togglePaid = (visitId) => {
-    const visits = db.getAll("visits");
-    const idx = visits.findIndex(v => v.id === visitId);
-    if (idx >= 0) { visits[idx].paid = !visits[idx].paid; db.save("visits", visits); onUpdate?.(); }
+    const all = db.getAll("visits");
+    const idx = all.findIndex(v => v.id === visitId);
+    if (idx >= 0) { all[idx].paid = !all[idx].paid; db.set("visits", all); refresh(); }
   };
 
+  if (view === "message") return <MessagingFlow person={person} onBack={() => { setView("profile"); refresh(); }} onPersonUpdated={refresh} />;
+  if (view === "add_dog" || selectedDog) return <DogWizard personId={personId} existingDog={selectedDog} onSave={() => { setSelectedDog(null); setView("profile"); refresh(); }} onBack={() => { setSelectedDog(null); setView("profile"); }} />;
+  if (view === "add_cat" || selectedCat) return <CatWizard personId={personId} existingCat={selectedCat} onSave={() => { setSelectedCat(null); setView("profile"); refresh(); }} onBack={() => { setSelectedCat(null); setView("profile"); }} />;
+
   return (
-    <div>
+    <div key={tick}>
       {showMoveStage && (
         <div className="modal-overlay" onClick={() => setShowMoveStage(false)}>
           <div className="modal-sheet">
             <div className="modal-handle" />
             <div className="modal-title">Move Stage</div>
-            {PIPELINE_STAGES.map(s => (
+            {STAGES.map(s => (
               <div key={s.id} className="card card-tap" onClick={() => moveStage(s.id)}>
-                <div className="row"><span className="dot" style={{ background: s.color, minWidth: 8, height: 8, borderRadius: "50%" }} /><span style={{ fontWeight: 600 }}>{s.label}</span>{refreshed.stage === s.id && <span className="text-green ml-auto">✓ Current</span>}</div>
+                <div className="row-between"><span style={{ fontWeight: 600 }}>{s.label}</span>{person.stage === s.id && <span className="text-green">✓</span>}</div>
               </div>
             ))}
           </div>
@@ -1019,103 +904,70 @@ function ContactDetail({ contact, onBack, onUpdate }) {
       )}
 
       <BackBtn onBack={onBack} />
-      <div className="page-header">
-        <div className="row-between">
-          <div>
-            <div className="page-title">{contact.name}</div>
-            <div className="page-sub">{contact.address}</div>
-          </div>
-          <StagePill stageId={refreshed.stage} />
+      <div style={{ padding: "0 16px 8px" }}>
+        <div className="row-between mb-8">
+          <div><div className="page-title">{person.name || "Unknown"}</div><div className="page-sub">{person.address || person.extracted?.location || ""}</div></div>
+          <StagePill stageId={person.stage} />
         </div>
       </div>
 
-      {/* Quick actions */}
-      <div className="btn-row mt-16">
+      <div className="btn-row">
         <button className="btn btn-primary btn-sm" onClick={() => setView("message")}>💬 Message</button>
-        <button className="btn btn-ghost btn-sm" onClick={() => setShowMoveStage(true)}>Move Stage</button>
-        {refreshed.stage !== "active" && <button className="btn btn-green btn-sm" onClick={makeActive}>Make Active</button>}
+        <button className="btn btn-ghost btn-sm" onClick={() => setShowMoveStage(true)}>Stage</button>
+        {person.stage !== "active" && <button className="btn btn-green btn-sm" onClick={() => moveStage("active")}>Make Active ✓</button>}
       </div>
 
-      {/* Contact info */}
-      <div className="section-label">Contact Info</div>
+      {/* Contact */}
+      <div className="section-label">Contact</div>
       <div className="card">
-        {[["📞", contact.phone], ["🏠", contact.address], ["📮", contact.postcode], ["🔑", contact.accessNotes], ["📱", contact.platform], ["💷", contact.rate ? `£${contact.rate}/walk` : null]].filter(([, v]) => v).map(([icon, val], i) => (
+        {[["📞", person.phone], ["🏠", person.address || person.extracted?.location], ["📮", person.postcode], ["📱", person.platform], ["💷", person.rate ? `£${person.rate}/walk` : null]].filter(([,v]) => v).map(([icon, val], i) => (
           <div key={i} className="row mt-4"><span style={{ fontSize: 14, minWidth: 20 }}>{icon}</span><span className="text-sm">{val}</span></div>
         ))}
-        {contact.notes && <div className="mt-8 text-sm text-muted">{contact.notes}</div>}
+        {person.notes && <div className="text-sm text-muted mt-8">{person.notes}</div>}
       </div>
 
-      {/* Dogs */}
-      {dogs.length > 0 && <>
-        <div className="section-label">Dogs</div>
-        {dogs.map(dog => (
-          <div key={dog.id} className="card card-tap" onClick={() => setSelectedDog(dog)}>
-            <div className="row-between">
-              <div>
-                <div style={{ fontWeight: 600 }}>🐕 {dog.name}</div>
-                <div className="text-sm text-muted">{dog.breed} · {dog.age}</div>
-                <div className="row mt-4 gap-4">
-                  {dog.size && <span className="badge badge-muted">{dog.size === "S" ? "Small" : dog.size === "M" ? "Medium" : "Large"}</span>}
-                  {dog.goodWithDogs && <span className={`badge ${dog.goodWithDogs === "Yes" ? "badge-green" : dog.goodWithDogs === "No" ? "badge-orange" : "badge-yellow"}`}>{dog.goodWithDogs} with dogs</span>}
-                  {dog.meetGreetResult && <span className={`badge ${dog.meetGreetResult === "Great" ? "badge-green" : dog.meetGreetResult === "Fine" ? "badge-purple" : "badge-orange"}`}>{dog.meetGreetResult}</span>}
-                </div>
-              </div>
-              <span className="text-muted">›</span>
-            </div>
+      {/* From messages */}
+      {person.extracted && Object.values(person.extracted).some(v => v && v !== "null") && (
+        <>
+          <div className="section-label">From Messages</div>
+          <div className="card">
+            {Object.entries(FIELD_LABELS).map(([field, meta]) => {
+              const val = person.extracted[field];
+              if (!val || val === "null") return null;
+              return <div key={field} className="row mt-4"><span style={{ fontSize: 14, minWidth: 20 }}>{meta.icon}</span><div><div className="text-xs text-muted">{meta.label}</div><div className="text-sm">{val}</div></div></div>;
+            })}
           </div>
-        ))}
-      </>}
+        </>
+      )}
+
+      {/* Dogs */}
+      {dogs.length > 0 && <><div className="section-label">Dogs</div>{dogs.map(dog => (
+        <div key={dog.id} className="card card-tap" onClick={() => setSelectedDog(dog)}>
+          <div className="row-between"><div><div style={{ fontWeight: 600 }}>🐕 {dog.name}</div><div className="text-sm text-muted">{dog.breed} · {dog.age}</div><div className="row mt-4" style={{ gap: 6 }}>{dog.size && <span className="badge badge-muted">{dog.size==="S"?"Small":dog.size==="M"?"Medium":"Large"}</span>}{dog.goodWithDogs && <span className={`badge ${dog.goodWithDogs==="Yes"?"badge-green":dog.goodWithDogs==="No"?"badge-orange":"badge-yellow"}`}>{dog.goodWithDogs} with dogs</span>}</div></div><span className="text-muted">›</span></div>
+        </div>
+      ))}</>}
 
       {/* Cats */}
-      {cats.length > 0 && <>
-        <div className="section-label">Cats</div>
-        {cats.map(cat => (
-          <div key={cat.id} className="card card-tap" onClick={() => setSelectedCat(cat)}>
-            <div className="row-between"><div><div style={{ fontWeight: 600 }}>🐱 {cat.name}</div><div className="text-sm text-muted">{cat.age} · {cat.indoorOutdoor}</div></div><span className="text-muted">›</span></div>
-          </div>
-        ))}
-      </>}
+      {cats.length > 0 && <><div className="section-label">Cats</div>{cats.map(cat => (
+        <div key={cat.id} className="card card-tap" onClick={() => setSelectedCat(cat)}>
+          <div className="row-between"><div><div style={{ fontWeight: 600 }}>🐱 {cat.name}</div><div className="text-sm text-muted">{cat.age} · {cat.indoorOutdoor}</div></div><span className="text-muted">›</span></div>
+        </div>
+      ))}</>}
 
       <div className="btn-row mt-4">
         <button className="btn btn-ghost btn-sm" onClick={() => setView("add_dog")}>+ Add Dog</button>
         <button className="btn btn-ghost btn-sm" onClick={() => setView("add_cat")}>+ Add Cat</button>
       </div>
 
-      {/* Visit history */}
-      {visits.length > 0 && <>
-        <div className="section-label">Visit History</div>
-        {visits.map(v => (
-          <div key={v.id} className="card card-sm">
-            <div className="row-between">
-              <div>
-                <div style={{ fontWeight: 600, fontSize: 14 }}>{SERVICE_ICON[v.serviceType]} {SERVICE_LABEL[v.serviceType]}</div>
-                <div className="text-xs text-muted">{fmtDate(v.date)} {v.time && `· ${v.time}`} {v.duration && `· ${v.duration}`}</div>
-              </div>
-              <div className="row">
-                {v.amount && <span className="text-sm text-muted">£{v.amount}</span>}
-                <div className={`check-box ${v.paid ? "done" : ""}`} style={{ width: 22, height: 22, borderRadius: 6 }} onClick={() => togglePaid(v.id)}>
-                  {v.paid && <span style={{ color: "#001a12", fontSize: 12, fontWeight: 700 }}>✓</span>}
-                </div>
-              </div>
-            </div>
+      {/* Visits */}
+      {visits.length > 0 && <><div className="section-label">Visits</div>{visits.map(v => (
+        <div key={v.id} className="card card-sm">
+          <div className="row-between">
+            <div><div style={{ fontWeight: 600, fontSize: 14 }}>{SERVICE_MAP[v.serviceType]?.icon} {SERVICE_MAP[v.serviceType]?.label}</div><div className="text-xs text-muted">{fmtDate(v.date)} {v.time && `· ${v.time}`} {v.duration && `· ${v.duration}`}</div></div>
+            <div className="row">{v.amount && <span className="text-sm text-muted">£{v.amount}</span>}<div className={`check-box${v.paid?" done":""}`} style={{ width: 22, height: 22, borderRadius: 6 }} onClick={() => togglePaid(v.id)}>{v.paid && <span style={{ color: "#001a12", fontSize: 11, fontWeight: 800 }}>✓</span>}</div></div>
           </div>
-        ))}
-      </>}
-
-      {/* Message thread */}
-      {msgs.length > 0 && <>
-        <div className="section-label">Messages</div>
-        <div style={{ padding: "0 16px", display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
-          {msgs.map(m => (
-            <div key={m.id} style={{ display: "flex", justifyContent: m.direction === "out" ? "flex-end" : "flex-start" }}>
-              <div style={{ maxWidth: "80%", background: m.direction === "out" ? "rgba(108,92,231,0.15)" : "var(--card2)", border: `1px solid ${m.direction === "out" ? "rgba(108,92,231,0.3)" : "var(--border)"}`, borderRadius: 12, padding: "10px 14px" }}>
-                <div style={{ fontSize: 13, lineHeight: 1.6 }}>{m.text}</div>
-                <div className="text-xs text-muted mt-4">{fmtDate(m.date)}</div>
-              </div>
-            </div>
-          ))}
         </div>
-      </>}
+      ))}</>}
 
       <div style={{ height: 32 }} />
     </div>
@@ -1125,138 +977,113 @@ function ContactDetail({ contact, onBack, onUpdate }) {
 /* ─────────────────────────────────────────────
    TAB: TODAY
 ───────────────────────────────────────────── */
-function TabToday({ onOpenContact, onOpenMessage, refresh }) {
+function TabToday({ onOpenPerson }) {
   const [completedActions, setCompletedActions] = useState(() => db.get("completedActions") || {});
   const [completedVisits, setCompletedVisits] = useState(() => db.get("completedVisits") || {});
-  const [showNewVisit, setShowNewVisit] = useState(false);
-  const [tick, setTick] = useState(0);
 
-  const todayVisits = db.getAll("visits").filter(v => v.date === today() && v.status === "confirmed").sort((a, b) => a.time.localeCompare(b.time));
-  const contacts = db.getAll("contacts");
-  const messages = db.getAll("messages");
+  const people = db.getAll("people");
   const visits = db.getAll("visits");
-  const actions = computeActions(contacts, messages, visits);
-
-  const waiting = contacts.filter(c => c.stage === "replied");
+  const todayVisits = visits.filter(v => v.date === todayStr() && v.status !== "cancelled").sort((a, b) => (a.time||"").localeCompare(b.time||""));
+  const actions = computeActions(people);
+  const waiting = people.filter(p => p.stage === "replied");
 
   const thisWeekVisits = visits.filter(v => {
-    const vDate = new Date(v.date);
-    const now2 = new Date();
-    const startOfWeek = new Date(now2); startOfWeek.setDate(now2.getDate() - now2.getDay() + 1); startOfWeek.setHours(0, 0, 0, 0);
-    const endOfWeek = new Date(startOfWeek); endOfWeek.setDate(startOfWeek.getDate() + 6);
-    return vDate >= startOfWeek && vDate <= endOfWeek;
+    const d = new Date(v.date), now = new Date();
+    const start = new Date(now); start.setDate(now.getDate() - now.getDay() + 1); start.setHours(0,0,0,0);
+    const end = new Date(start); end.setDate(start.getDate() + 6);
+    return d >= start && d <= end;
   });
+  const earned = thisWeekVisits.filter(v => v.paid && v.amount).reduce((s, v) => s + parseFloat(v.amount||0), 0);
+  const outstanding = thisWeekVisits.filter(v => !v.paid && v.amount).reduce((s, v) => s + parseFloat(v.amount||0), 0);
 
-  const earned = thisWeekVisits.filter(v => v.paid && v.amount).reduce((s, v) => s + parseFloat(v.amount || 0), 0);
-  const outstanding = thisWeekVisits.filter(v => !v.paid && v.amount).reduce((s, v) => s + parseFloat(v.amount || 0), 0);
-
-  const toggleAction = (actionId) => {
-    const next = { ...completedActions, [actionId]: !completedActions[actionId] };
-    setCompletedActions(next);
-    db.set("completedActions", next);
+  const toggleAction = (id) => { const next = { ...completedActions, [id]: !completedActions[id] }; setCompletedActions(next); db.set("completedActions", next); };
+  const toggleVisit = (id) => {
+    const next = { ...completedVisits, [id]: !completedVisits[id] }; setCompletedVisits(next); db.set("completedVisits", next);
+    const all = db.getAll("visits"); const idx = all.findIndex(v => v.id === id);
+    if (idx >= 0) { all[idx].status = next[id] ? "completed" : "confirmed"; db.set("visits", all); }
   };
 
-  const toggleVisit = (visitId) => {
-    const next = { ...completedVisits, [visitId]: !completedVisits[visitId] };
-    setCompletedVisits(next);
-    db.set("completedVisits", next);
-    // mark visit done
-    const allVisits = db.getAll("visits");
-    const idx = allVisits.findIndex(v => v.id === visitId);
-    if (idx >= 0) { allVisits[idx].status = next[visitId] ? "completed" : "confirmed"; db.save("visits", allVisits); }
-  };
-
-  const greetingHour = new Date().getHours();
-  const greeting = greetingHour < 12 ? "Good morning" : greetingHour < 17 ? "Good afternoon" : "Good evening";
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
 
   return (
     <div>
-      {/* Header */}
       <div style={{ padding: "20px 16px 12px" }}>
         <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 13, letterSpacing: 2, color: "var(--muted)", marginBottom: 4 }}>WALKS & WHISKERS</div>
         <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 32, lineHeight: 1 }}>{greeting}, Freddie 👋</div>
-        <div style={{ color: "var(--muted)", fontSize: 13, marginTop: 4 }}>{new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}</div>
+        <div className="text-sm text-muted mt-4">{new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}</div>
       </div>
 
-      {/* Walks today */}
       <div className="section-label">WALKS TODAY</div>
-      {todayVisits.length === 0 ? (
-        <div style={{ padding: "12px 16px" }}><div className="text-sm text-muted">No walks booked today 🌿</div></div>
-      ) : todayVisits.map(v => {
-        const c = contacts.find(x => x.id === v.contactId);
-        const dogs = db.getAll("dogs").filter(d => d.contactId === v.contactId);
-        const isDone = completedVisits[v.id];
-        return (
-          <div key={v.id} className="card" style={{ opacity: isDone ? 0.5 : 1 }}>
-            <div className="check-row">
-              <CheckBox done={isDone} onToggle={() => toggleVisit(v.id)} />
-              <div className="check-content" onClick={() => c && onOpenContact(c)}>
-                <div className="row-between">
-                  <div style={{ fontWeight: 600, fontSize: 16 }}>{v.time} — {dogs.map(d => d.name).join(", ") || "Dog"}</div>
-                  <span className="badge badge-purple">{v.duration || SERVICE_LABEL[v.serviceType]}</span>
-                </div>
-                <div className="text-sm text-muted mt-4">{c?.name} · {c?.address?.split(",")[0]}</div>
-                <div className="text-xs text-muted mt-4">{SERVICE_ICON[v.serviceType]} {SERVICE_LABEL[v.serviceType]}</div>
-              </div>
-            </div>
-          </div>
-        );
-      })}
-
-      {/* Actions */}
-      <div className="section-label">ACTIONS</div>
-      {actions.length === 0 ? (
-        <div style={{ padding: "12px 16px" }}><div className="text-sm text-muted">All caught up! Nothing to action 🎉</div></div>
-      ) : actions.map((action, i) => {
-        const actionId = `${action.contactId}-${action.type}`;
-        const isDone = completedActions[actionId];
-        const c = contacts.find(x => x.id === action.contactId);
-        return (
-          <div key={actionId} className="card" style={{ opacity: isDone ? 0.4 : 1 }}>
-            <div className="check-row">
-              <CheckBox done={isDone} onToggle={() => toggleAction(actionId)} />
-              <div className="check-content">
-                <div className="row-between">
-                  <div className="row flex-1" onClick={() => !isDone && c && onOpenContact(c)}>
-                    <UrgencyDot urgency={action.urgency} />
-                    <span style={{ fontWeight: 600, fontSize: 14 }}>{action.label}</span>
+      {todayVisits.length === 0
+        ? <div style={{ padding: "8px 16px 4px" }}><div className="text-sm text-muted">No walks booked today 🌿</div></div>
+        : todayVisits.map(v => {
+          const p = people.find(x => x.id === v.personId);
+          const dogs = db.getAll("dogs").filter(d => d.personId === v.personId);
+          const done = completedVisits[v.id];
+          return (
+            <div key={v.id} className="card" style={{ opacity: done ? 0.5 : 1 }}>
+              <div className="check-row">
+                <CheckBox done={done} onToggle={() => toggleVisit(v.id)} />
+                <div style={{ flex: 1, cursor: "pointer" }} onClick={() => p && onOpenPerson(p.id)}>
+                  <div className="row-between">
+                    <div style={{ fontWeight: 700, fontSize: 16 }}>{v.time || "—"} · {dogs.map(d => d.name).join(", ") || "Dog"}</div>
+                    <span className="badge badge-purple">{v.duration || SERVICE_MAP[v.serviceType]?.label}</span>
                   </div>
-                  {!isDone && c && (
-                    <button
-                      className="btn btn-primary btn-sm"
-                      style={{ padding: "7px 14px", fontSize: 13, width: "auto", flexShrink: 0, marginLeft: 8 }}
-                      onClick={() => onOpenMessage(c)}
-                    >
-                      💬 Reply
-                    </button>
-                  )}
+                  <div className="text-sm text-muted mt-4">{p?.name} · {(p?.address || p?.extracted?.location || "").split(",")[0]}</div>
+                  <div className="text-xs text-muted mt-4">{SERVICE_MAP[v.serviceType]?.icon} {SERVICE_MAP[v.serviceType]?.label}</div>
                 </div>
-                <div className="mt-4" onClick={() => !isDone && c && onOpenContact(c)}><StagePill stageId={action.stage} /></div>
               </div>
             </div>
-          </div>
-        );
-      })}
+          );
+        })
+      }
 
-      {/* Waiting */}
+      <div className="section-label">TO DO</div>
+      {actions.length === 0
+        ? <div style={{ padding: "8px 16px 4px" }}><div className="text-sm text-muted">All caught up 🎉</div></div>
+        : actions.map(action => {
+          const actionId = `${action.personId}-${action.type}`;
+          const done = completedActions[actionId];
+          const p = people.find(x => x.id === action.personId);
+          return (
+            <div key={actionId} className="card" style={{ opacity: done ? 0.4 : 1 }}>
+              <div className="check-row">
+                <CheckBox done={done} onToggle={() => toggleAction(actionId)} />
+                <div style={{ flex: 1 }}>
+                  <div className="row-between">
+                    <div className="row flex-1" style={{ cursor: "pointer" }} onClick={() => !done && p && onOpenPerson(p.id)}>
+                      <span className="dot" style={{ background: action.urgency === "high" ? "var(--orange)" : "var(--yellow)" }} />
+                      <span style={{ fontWeight: 600, fontSize: 14 }}>{action.label}</span>
+                    </div>
+                    {!done && p && (
+                      <button className="btn btn-primary btn-sm" style={{ marginLeft: 8, flexShrink: 0 }} onClick={() => onOpenPerson(p.id)}>
+                        💬 Reply
+                      </button>
+                    )}
+                  </div>
+                  <div className="mt-4"><StagePill stageId={action.stage} /></div>
+                </div>
+              </div>
+            </div>
+          );
+        })
+      }
+
       {waiting.length > 0 && <>
         <div className="section-label">WAITING ON</div>
-        {waiting.map(c => (
-          <div key={c.id} className="card card-tap card-sm" onClick={() => onOpenContact(c)}>
-            <div className="row-between">
-              <div><div style={{ fontWeight: 600, fontSize: 14 }}>{c.name}</div><div className="text-xs text-muted">Replied — awaiting response</div></div>
-              <span className="text-muted">›</span>
-            </div>
+        {waiting.map(p => (
+          <div key={p.id} className="card card-tap card-sm" onClick={() => onOpenPerson(p.id)}>
+            <div className="row-between"><div><div style={{ fontWeight: 600, fontSize: 14 }}>{p.name}</div><div className="text-xs text-muted">Replied — awaiting their response</div></div><span className="text-muted">›</span></div>
           </div>
         ))}
       </>}
 
-      {/* Earnings — tucked at the bottom */}
       <div className="section-label">THIS WEEK</div>
       <div className="earnings-card">
         <div className="row-between">
           <div><div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 26, color: "var(--green)" }}>£{earned.toFixed(0)}</div><div className="text-xs text-muted">earned</div></div>
-          {outstanding > 0 && <div style={{ textAlign: "right" }}><div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--yellow)" }}>£{outstanding.toFixed(0)}</div><div className="text-xs text-muted">outstanding</div></div>}
+          {outstanding > 0 && <div style={{ textAlign: "right" }}><div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "var(--yellow)" }}>£{outstanding.toFixed(0)}</div><div className="text-xs text-muted">outstanding</div></div>}
           {earned === 0 && outstanding === 0 && <div className="text-sm text-muted">No paid visits logged yet</div>}
         </div>
       </div>
@@ -1267,115 +1094,68 @@ function TabToday({ onOpenContact, onOpenMessage, refresh }) {
 }
 
 /* ─────────────────────────────────────────────
-   TAB: PIPELINE
+   TAB: PEOPLE
 ───────────────────────────────────────────── */
-function TabPipeline({ onOpenContact, refresh }) {
-  const [filterStage, setFilterStage] = useState("all");
-  const [showNewContact, setShowNewContact] = useState(false);
-  const [tick, setTick] = useState(0);
-
-  const contacts = db.getAll("contacts").filter(c => c.stage !== "active");
-
-  const filtered = filterStage === "all" ? contacts : contacts.filter(c => c.stage === filterStage);
-  const grouped = {};
-  for (const s of PIPELINE_STAGES) {
-    grouped[s.id] = contacts.filter(c => c.stage === s.id);
-  }
-
-  if (showNewContact) return <NewContactWizard onSave={() => { setShowNewContact(false); setTick(t => t + 1); }} onBack={() => setShowNewContact(false)} />;
-
-  return (
-    <div>
-      <div className="page-header mt-8">
-        <div className="row-between">
-          <div className="page-title">Pipeline</div>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 13, letterSpacing: 1, color: "var(--muted)" }}>{contacts.length} people</div>
-        </div>
-      </div>
-
-      <div className="btn-row mt-12">
-        <button className="btn btn-primary" onClick={() => setShowNewContact(true)}>+ New Enquiry</button>
-      </div>
-
-      {/* Stage filter pills */}
-      <div className="pill-tabs mt-8">
-        <button className={`pill-tab ${filterStage === "all" ? "active" : ""}`} onClick={() => setFilterStage("all")}>All ({contacts.length})</button>
-        {PIPELINE_STAGES.map(s => grouped[s.id].length > 0 && (
-          <button key={s.id} className={`pill-tab ${filterStage === s.id ? "active" : ""}`} onClick={() => setFilterStage(s.id)}>
-            {s.label} ({grouped[s.id].length})
-          </button>
-        ))}
-      </div>
-
-      {filtered.length === 0 ? (
-        <div className="empty-state"><div className="icon">🔍</div><h3>Nothing here</h3><p>Add a new enquiry to get started</p></div>
-      ) : filtered.map(c => (
-        <div key={c.id} className="card card-tap" onClick={() => onOpenContact(c)}>
-          <div className="row-between">
-            <div className="flex-1">
-              <div className="row" style={{ gap: 8 }}>
-                <span style={{ fontWeight: 600, fontSize: 16 }}>{c.name}</span>
-              </div>
-              <div className="row mt-4" style={{ gap: 8 }}>
-                <StagePill stageId={c.stage} />
-                {c.platform && <span className="badge badge-muted">{c.platform}</span>}
-                {c.serviceType && <span className="text-xs text-muted">{SERVICE_ICON[c.serviceType]}</span>}
-              </div>
-              {c.address && <div className="text-xs text-muted mt-4">{c.address}</div>}
-              <div className="text-xs text-muted mt-2">Added {fmtDate(c.createdAt)}</div>
-            </div>
-            <span className="text-muted">›</span>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/* ─────────────────────────────────────────────
-   TAB: CLIENTS
-───────────────────────────────────────────── */
-function TabClients({ onOpenContact }) {
+function TabPeople({ onOpenPerson, onNewEnquiry }) {
+  const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
-  const contacts = db.getAll("contacts").filter(c => c.stage === "active");
-  const filtered = contacts.filter(c => c.name.toLowerCase().includes(search.toLowerCase()) || (c.address || "").toLowerCase().includes(search.toLowerCase()));
+
+  const people = db.getAll("people");
+  const filters = [
+    { id: "all",            label: `All (${people.length})` },
+    { id: "active",         label: `Active (${people.filter(p => p.stage==="active").length})` },
+    { id: "enquiries",      label: `Enquiries (${people.filter(p => !["active","not_proceeding"].includes(p.stage)).length})` },
+    { id: "not_proceeding", label: "Not proceeding" },
+  ];
+
+  const filtered = people.filter(p => {
+    if (filter === "active") return p.stage === "active";
+    if (filter === "enquiries") return !["active","not_proceeding"].includes(p.stage);
+    if (filter === "not_proceeding") return p.stage === "not_proceeding";
+    return true;
+  }).filter(p => !search || (p.name||"").toLowerCase().includes(search.toLowerCase()) || (p.address||"").toLowerCase().includes(search.toLowerCase()));
 
   return (
     <div>
-      <div className="page-header mt-8">
+      <div style={{ padding: "16px 16px 8px" }}>
         <div className="row-between">
-          <div className="page-title">Clients</div>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 13, letterSpacing: 1, color: "var(--muted)" }}>{contacts.length} active</div>
+          <div className="page-title">People</div>
+          <button className="btn btn-primary btn-sm" onClick={onNewEnquiry}>+ New Enquiry</button>
         </div>
       </div>
-
-      <div style={{ padding: "12px 16px" }}>
-        <input className="input" placeholder="Search clients..." value={search} onChange={e => setSearch(e.target.value)} />
+      <div style={{ padding: "8px 16px" }}>
+        <input className="input" placeholder="Search..." value={search} onChange={e => setSearch(e.target.value)} />
       </div>
-
-      {filtered.length === 0 ? (
-        <div className="empty-state"><div className="icon">🐾</div><h3>No active clients yet</h3><p>Move someone from the Pipeline to Active to see them here</p></div>
-      ) : filtered.map(c => {
-        const dogs = db.getAll("dogs").filter(d => d.contactId === c.id);
-        const cats = db.getAll("cats").filter(d => d.contactId === c.id);
-        const lastVisit = db.getAll("visits").filter(v => v.contactId === c.id && v.status === "completed").sort((a, b) => b.date.localeCompare(a.date))[0];
-        return (
-          <div key={c.id} className="card card-tap" onClick={() => onOpenContact(c)}>
-            <div className="row-between">
-              <div className="flex-1">
-                <div style={{ fontWeight: 600, fontSize: 16 }}>{c.name}</div>
-                <div className="text-sm text-muted mt-2">
-                  {dogs.map(d => `🐕 ${d.name}`).join(" · ")}
-                  {cats.map(d => ` 🐱 ${d.name}`).join(" · ")}
+      <div className="pill-tabs mb-12">
+        {filters.map(f => <button key={f.id} className={`pill-tab${filter===f.id?" active":""}`} onClick={() => setFilter(f.id)}>{f.label}</button>)}
+      </div>
+      {filtered.length === 0
+        ? <div className="empty-state"><div className="icon">🐾</div><h3>Nobody here yet</h3><p>Tap + New Enquiry to get started</p></div>
+        : filtered.map(p => {
+          const dogs = db.getAll("dogs").filter(d => d.personId === p.id);
+          const cats = db.getAll("cats").filter(c => c.personId === p.id);
+          const msgCount = (p.messages||[]).length;
+          return (
+            <div key={p.id} className="card card-tap" onClick={() => onOpenPerson(p.id)}>
+              <div className="row-between">
+                <div className="flex-1">
+                  <div style={{ fontWeight: 700, fontSize: 16 }}>{p.name || "Unknown"}</div>
+                  <div className="row mt-4" style={{ gap: 6, flexWrap: "wrap" }}>
+                    <StagePill stageId={p.stage} />
+                    {p.platform && <span className="badge badge-muted">{p.platform}</span>}
+                  </div>
+                  <div className="text-sm text-muted mt-4">
+                    {dogs.map(d => `🐕 ${d.name}`).join(" · ")}{cats.map(c => ` 🐱 ${c.name}`).join(" · ")}
+                    {!dogs.length && !cats.length && (p.extracted?.dog_name || p.extracted?.location || "")}
+                  </div>
+                  {msgCount > 0 && <div className="text-xs text-muted mt-4">💬 {msgCount} message{msgCount!==1?"s":""}</div>}
                 </div>
-                <div className="text-xs text-muted mt-4">{c.address?.split(",")[0]} · {c.platform}</div>
-                {lastVisit && <div className="text-xs text-muted mt-2">Last visit: {fmtDate(lastVisit.date)}</div>}
+                <span className="text-muted">›</span>
               </div>
-              <span className="text-muted">›</span>
             </div>
-          </div>
-        );
-      })}
+          );
+        })
+      }
     </div>
   );
 }
@@ -1383,143 +1163,56 @@ function TabClients({ onOpenContact }) {
 /* ─────────────────────────────────────────────
    TAB: SCHEDULE
 ───────────────────────────────────────────── */
-function TabSchedule({ onOpenContact }) {
-  const visits = db.getAll("visits").filter(v => v.status === "confirmed" || v.status === "completed").sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
-  const contacts = db.getAll("contacts");
-
-  // Group by date
+function TabSchedule({ onOpenPerson }) {
+  const visits = db.getAll("visits").filter(v => v.status !== "cancelled").sort((a, b) => a.date.localeCompare(b.date) || (a.time||"").localeCompare(b.time||""));
+  const people = db.getAll("people");
   const grouped = {};
-  for (const v of visits) {
-    if (!grouped[v.date]) grouped[v.date] = [];
-    grouped[v.date].push(v);
-  }
+  for (const v of visits) { if (!grouped[v.date]) grouped[v.date] = []; grouped[v.date].push(v); }
+  const today = todayStr();
+  const upcoming = Object.keys(grouped).filter(d => d >= today).sort();
+  const past = Object.keys(grouped).filter(d => d < today).sort().reverse().slice(0, 7);
 
-  const dates = Object.keys(grouped).sort();
-  const todayStr = today();
-
-  const upcomingDates = dates.filter(d => d >= todayStr);
-  const pastDates = dates.filter(d => d < todayStr).reverse().slice(0, 5);
-
-  const renderVisitCard = (v, isPast) => {
-    const c = contacts.find(x => x.id === v.contactId);
-    const dogs = db.getAll("dogs").filter(d => d.contactId === v.contactId);
-    return (
-      <div key={v.id} className="card card-tap card-sm" style={{ opacity: isPast || v.status === "completed" ? 0.5 : 1 }} onClick={() => c && onOpenContact(c)}>
-        <div className="row-between">
-          <div>
-            <div className="row" style={{ gap: 6 }}>
-              <span style={{ fontWeight: 600, fontSize: 14 }}>{v.time || "—"}</span>
-              <span style={{ fontWeight: 600, fontSize: 14 }}>{SERVICE_ICON[v.serviceType]} {dogs.map(d => d.name).join(", ") || c?.name}</span>
-            </div>
-            <div className="text-xs text-muted mt-2">{SERVICE_LABEL[v.serviceType]} {v.duration ? `· ${v.duration}` : ""}</div>
-            {c && <div className="text-xs text-muted">{c.address?.split(",")[0]}</div>}
-          </div>
-          {v.status === "completed" && <span className="badge badge-green">Done</span>}
-        </div>
-      </div>
-    );
-  };
-
-  const renderDateGroup = (dateStr, isPast = false) => {
+  const renderDay = (dateStr, isPast) => {
     const d = new Date(dateStr + "T12:00:00");
-    const isToday = dateStr === todayStr;
+    const isToday = dateStr === today;
     return (
       <div key={dateStr}>
-        <div className="section-label" style={{ color: isToday ? "var(--green)" : "var(--muted)" }}>
+        <div className="section-label" style={{ color: isToday ? "var(--green)" : undefined }}>
           {isToday ? "TODAY · " : ""}{d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short" })}
         </div>
-        {grouped[dateStr].map(v => renderVisitCard(v, isPast))}
+        {grouped[dateStr].map(v => {
+          const p = people.find(x => x.id === v.personId);
+          const dogs = db.getAll("dogs").filter(d => d.personId === v.personId);
+          return (
+            <div key={v.id} className="card card-tap card-sm" style={{ opacity: isPast || v.status === "completed" ? 0.5 : 1 }} onClick={() => p && onOpenPerson(p.id)}>
+              <div className="row-between">
+                <div>
+                  <div className="row" style={{ gap: 6 }}>
+                    <span style={{ fontWeight: 700, fontSize: 14 }}>{v.time || "—"}</span>
+                    <span style={{ fontWeight: 600, fontSize: 14 }}>{SERVICE_MAP[v.serviceType]?.icon} {dogs.map(d => d.name).join(", ") || p?.name || "—"}</span>
+                  </div>
+                  <div className="text-xs text-muted mt-2">{SERVICE_MAP[v.serviceType]?.label} {v.duration ? `· ${v.duration}` : ""}</div>
+                  {p && <div className="text-xs text-muted">{(p.address || p.extracted?.location || "").split(",")[0]}</div>}
+                </div>
+                {v.status === "completed" && <span className="badge badge-green">Done</span>}
+              </div>
+            </div>
+          );
+        })}
       </div>
     );
   };
 
   return (
     <div>
-      <div className="page-header mt-8">
+      <div style={{ padding: "16px 16px 8px" }}>
         <div className="page-title">Schedule</div>
         <div className="page-sub">All upcoming confirmed visits</div>
       </div>
-
-      {upcomingDates.length === 0 && (
-        <div className="empty-state"><div className="icon">📅</div><h3>Nothing booked yet</h3><p>Visits will appear here once confirmed through messaging</p></div>
-      )}
-
-      {upcomingDates.map(d => renderDateGroup(d, false))}
-
-      {pastDates.length > 0 && (
-        <>
-          <div style={{ height: 8 }} />
-          {pastDates.map(d => renderDateGroup(d, true))}
-        </>
-      )}
-
+      {upcoming.length === 0 && <div className="empty-state"><div className="icon">📅</div><h3>Nothing booked yet</h3><p>Visits appear here once confirmed through messaging</p></div>}
+      {upcoming.map(d => renderDay(d, false))}
+      {past.length > 0 && past.map(d => renderDay(d, true))}
       <div style={{ height: 16 }} />
-    </div>
-  );
-}
-
-/* ─────────────────────────────────────────────
-   ROOT APP
-───────────────────────────────────────────── */
-/* ─────────────────────────────────────────────
-   TAB: MESSAGE (standalone, no contact required)
-───────────────────────────────────────────── */
-function TabMessage({ preloadContact, onClearPreload }) {
-  const [started, setStarted] = useState(!!preloadContact);
-  const [contact, setContact] = useState(preloadContact || null);
-  const [tick, setTick] = useState(0);
-
-  // If a preloaded contact arrives after mount, start immediately
-  useEffect(() => {
-    if (preloadContact) { setContact(preloadContact); setStarted(true); }
-  }, [preloadContact?.id]);
-
-  const contacts = db.getAll("contacts").filter(c => !["not_proceeding"].includes(c.stage));
-
-  const reset = () => { setStarted(false); setContact(null); onClearPreload?.(); };
-
-  if (started) {
-    return <MessagingTool contact={contact} onBack={reset} onSaved={reset} />;
-  }
-
-  return (
-    <div>
-      <div className="page-header mt-8 mb-16">
-        <div className="page-title">Message Tool</div>
-        <div className="page-sub">Write a reply or draft a new message</div>
-      </div>
-
-      {/* Quick start — no contact */}
-      <div className="section-label">QUICK START</div>
-      <div className="card card-tap" onClick={() => { setContact(null); setStarted(true); }}>
-        <div className="row">
-          <span style={{ fontSize: 28 }}>✍️</span>
-          <div className="col flex-1">
-            <div style={{ fontWeight: 600, fontSize: 16 }}>New enquiry reply</div>
-            <div className="text-sm text-muted">Someone messaged — paste it in and get a draft</div>
-          </div>
-          <span className="text-muted">›</span>
-        </div>
-      </div>
-
-      {/* Pick a contact */}
-      <div className="section-label">OR PICK A CONTACT</div>
-      {contacts.length === 0 ? (
-        <div style={{ padding: "12px 16px" }}><div className="text-sm text-muted">No contacts yet — add an enquiry in Pipeline first</div></div>
-      ) : contacts.map(c => (
-        <div key={c.id} className="card card-tap" onClick={() => { setContact(c); setStarted(true); }}>
-          <div className="row-between">
-            <div>
-              <div style={{ fontWeight: 600, fontSize: 15 }}>{c.name}</div>
-              <div className="row mt-4" style={{ gap: 6 }}>
-                <StagePill stageId={c.stage} />
-                {c.platform && <span className="badge badge-muted">{c.platform}</span>}
-              </div>
-            </div>
-            <span style={{ fontSize: 20 }}>💬</span>
-          </div>
-        </div>
-      ))}
     </div>
   );
 }
@@ -1529,54 +1222,55 @@ function TabMessage({ preloadContact, onClearPreload }) {
 ───────────────────────────────────────────── */
 const TABS = [
   { id: "today",    label: "Today",    icon: "🏠" },
-  { id: "pipeline", label: "Pipeline", icon: "📊" },
-  { id: "clients",  label: "Clients",  icon: "🐾" },
-  { id: "message",  label: "Message",  icon: "💬" },
+  { id: "people",   label: "People",   icon: "🐾" },
   { id: "schedule", label: "Schedule", icon: "📅" },
 ];
 
 export default function App() {
   const [tab, setTab] = useState("today");
-  const [selectedContact, setSelectedContact] = useState(null);
-  const [messagePreload, setMessagePreload] = useState(null); // contact to preload in message tab
+  const [openPersonId, setOpenPersonId] = useState(null);
+  const [showNewEnquiry, setShowNewEnquiry] = useState(false);
   const [tick, setTick] = useState(0);
 
   const refresh = useCallback(() => setTick(t => t + 1), []);
 
-  const openContact = (c) => setSelectedContact(c);
-  const closeContact = () => { setSelectedContact(null); refresh(); };
+  // New enquiry — no person yet
+  if (showNewEnquiry) return (
+    <>
+      <style>{CSS}</style>
+      <div className="app-shell"><div className="tab-content">
+        <MessagingFlow person={null} onBack={() => { setShowNewEnquiry(false); refresh(); }} onPersonUpdated={refresh} />
+      </div></div>
+    </>
+  );
 
-  // Called from Today screen actions — jump straight to messaging for a contact
-  const openMessage = (c) => { setMessagePreload(c); setTab("message"); };
+  // Person detail
+  if (openPersonId) return (
+    <>
+      <style>{CSS}</style>
+      <div className="app-shell"><div className="tab-content">
+        <PersonDetail personId={openPersonId} onBack={() => { setOpenPersonId(null); refresh(); }} onUpdate={refresh} />
+      </div></div>
+    </>
+  );
 
   return (
     <>
       <style>{CSS}</style>
       <div className="app-shell">
         <div className="tab-content">
-          {selectedContact ? (
-            <ContactDetail contact={selectedContact} onBack={closeContact} onUpdate={refresh} />
-          ) : (
-            <>
-              {tab === "today"    && <TabToday    key={tick} onOpenContact={openContact} onOpenMessage={openMessage} refresh={refresh} />}
-              {tab === "pipeline" && <TabPipeline key={tick} onOpenContact={openContact} refresh={refresh} />}
-              {tab === "clients"  && <TabClients  key={tick} onOpenContact={openContact} />}
-              {tab === "message"  && <TabMessage  key={tick} preloadContact={messagePreload} onClearPreload={() => setMessagePreload(null)} />}
-              {tab === "schedule" && <TabSchedule key={tick} onOpenContact={openContact} />}
-            </>
-          )}
+          {tab === "today"    && <TabToday    key={tick} onOpenPerson={setOpenPersonId} />}
+          {tab === "people"   && <TabPeople   key={tick} onOpenPerson={setOpenPersonId} onNewEnquiry={() => setShowNewEnquiry(true)} />}
+          {tab === "schedule" && <TabSchedule key={tick} onOpenPerson={setOpenPersonId} />}
         </div>
-
-        {!selectedContact && (
-          <nav className="bottom-nav">
-            {TABS.map(t => (
-              <button key={t.id} className={`nav-tab ${tab === t.id ? "active" : ""}`} onClick={() => { if (t.id !== "message") setMessagePreload(null); setTab(t.id); }}>
-                <span className="nav-icon">{t.icon}</span>
-                <span>{t.label}</span>
-              </button>
-            ))}
-          </nav>
-        )}
+        <nav className="bottom-nav">
+          {TABS.map(t => (
+            <button key={t.id} className={`nav-tab${tab===t.id?" active":""}`} onClick={() => setTab(t.id)}>
+              <span className="nav-icon">{t.icon}</span>
+              <span>{t.label}</span>
+            </button>
+          ))}
+        </nav>
       </div>
     </>
   );
