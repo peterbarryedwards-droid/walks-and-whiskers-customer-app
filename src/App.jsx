@@ -188,8 +188,31 @@ const FIELD_LABELS = {
   notes:       { label: "Other notes",   icon: "📝" },
 };
 
+/* ─────────────────────────────────────────────
+   FREDDIE'S PRICES (used by AI for Direct/Other)
+───────────────────────────────────────────── */
+const DEFAULT_PRICES = [
+  { id: "walk_30",   service: "Dog Walk",    detail: "30 minutes", price: 15 },
+  { id: "walk_60",   service: "Dog Walk",    detail: "60 minutes", price: 20 },
+  { id: "dropin_dog",service: "Dog Drop-in", detail: "30 min visit", price: 15 },
+  { id: "dropin_cat",service: "Cat Visit",   detail: "30 min visit", price: 12 },
+  { id: "sit_dog",   service: "Home Sit / Stay Over", detail: "Dogs — per night", price: 40, prefix: "from " },
+  { id: "sit_cat",   service: "Home Sit / Stay Over", detail: "Cats — per night",  price: 25, prefix: "from " },
+];
+
+function getPrices() {
+  return db.get("prices") || DEFAULT_PRICES;
+}
+
+function pricesText() {
+  return getPrices().map(p => `${p.service} (${p.detail}): ${p.prefix || ""}£${p.price}`).join("\n");
+}
+
 const SYSTEM_PROMPTS = {
   new_client: `You are a communication coach helping Freddie, a professional young dog walker in Winchester, reply to a new client enquiry.
+
+FREDDIE'S RATES (use these for Direct or Other platform enquiries only):
+PRICES_PLACEHOLDER
 
 Rules for the DRAFT REPLY:
 - Be warm, friendly and professional
@@ -197,10 +220,10 @@ Rules for the DRAFT REPLY:
   1. Thank them and express interest
   2. If location is unknown, ask for it naturally
   3. If dates or times are unknown, ask for them naturally
-  4. If platform is "Direct" or "Other" AND rate has not been agreed, mention the rate clearly. If platform is "Rover" or "Bark" NEVER mention rate — it is handled by the platform
+  4. If platform is "Direct" or "Other" AND rate has not been agreed, mention the relevant rate from the prices above clearly. If platform is "Rover" or "Bark" NEVER mention rate — it is handled by the platform
   5. THEN suggest a short meet-and-greet naturally
   6. Close warmly
-- Never invent or guess a rate — only use one if explicitly provided
+- Only mention rates relevant to the service they've asked about
 - Sign off as Freddie. Use British English.
 
 Format with ONLY these two sections:
@@ -348,6 +371,10 @@ function MessagingFlow({ person, onBack, onPersonUpdated }) {
   const [draftText, setDraftText] = useState("");
   const [followUpMsg, setFollowUpMsg] = useState("");
   const [toast, setToast] = useState(null);
+  const [detectedIntent, setDetectedIntent] = useState(null);
+  const [tweakInput, setTweakInput] = useState("");
+  const [tweaking, setTweaking] = useState(false);
+  const [bookingForm, setBookingForm] = useState(null); // null | { date, time, serviceType, duration }
   const [currentPerson, setCurrentPerson] = useState(person);
   const inputRef = useRef(null);
 
@@ -407,7 +434,8 @@ ${enquiryType.id === "existing_client" ? "- Existing client — minimal question
     const context = Object.entries(allData).filter(([, v]) => v && v !== "null").map(([k, v]) => `${k}: ${v}`).join("\n");
     const history = (currentPerson?.messages || []).map(m => `${m.role === "client" ? "Client" : "Freddie"}: ${m.text || m.draft}`).join("\n\n");
 
-    const prompt = `${SYSTEM_PROMPTS[enquiryType.id]}
+    const systemPrompt = SYSTEM_PROMPTS[enquiryType.id].replace("PRICES_PLACEHOLDER", pricesText());
+    const prompt = `${systemPrompt}
 Platform: ${platform}
 Original message: ${rawMessage}
 ${history ? `\nConversation so far:\n${history}` : ""}
@@ -420,21 +448,36 @@ Known information:\n${context || "(none)"}`;
       setSections(parsed);
       setDraftText(draftSection?.content || raw);
 
+      // Detect stage + booking intent from the client's message
+      const intentResult = await callClaudeJSON(`Read this client message and return JSON only:
+Message: "${rawMessage}"
+Conversation context: "${history}"
+
+Return: {
+  "suggested_stage": one of "new_enquiry"|"replied"|"interested"|"meet_arranged"|"met"|"active"|"gone_quiet",
+  "booking_detected": true/false (did they confirm a booking or say yes go ahead?),
+  "meet_detected": true/false (did they ask to meet or arrange a meet and greet?),
+  "booking_summary": "brief summary of what was booked e.g. 30 min walk on Tuesday 8th" or null
+}`);
+
       const clientMsg = { role: "client", text: rawMessage, date: nowStr() };
       const extra = parsed.find(s => s.key === "extra1");
       const freddieMsg = { role: "freddie", draft: draftSection?.content || raw, questions: extra?.content || null, questionsLabel: extra?.label || null, date: nowStr() };
 
       const name = allData.client_name && allData.client_name !== "null" ? allData.client_name : currentPerson?.name || "Unknown";
-      savePerson({
-        name,
-        platform,
-        stage: currentPerson?.stage === "new_enquiry" ? "replied" : (currentPerson?.stage || "replied"),
+      const newStage = intentResult.suggested_stage || (currentPerson?.stage === "new_enquiry" ? "replied" : currentPerson?.stage || "replied");
+
+      const saved = savePerson({
+        name, platform,
+        stage: newStage,
         lastActionDate: nowStr(),
         extracted: allData,
         messages: [...(currentPerson?.messages || []), clientMsg, freddieMsg],
         serviceType: allData.service || currentPerson?.serviceType,
         address: allData.location || currentPerson?.address,
       });
+
+      setDetectedIntent(intentResult);
       setScreen("result");
     } catch { setScreen("error"); }
   };
@@ -455,18 +498,79 @@ DRAFT REPLY
 ONE TIP`;
 
     try {
-      const raw = await callClaude(prompt, 1000);
+      const [raw, intentResult] = await Promise.all([
+        callClaude(prompt, 1000),
+        callClaudeJSON(`Read this client message and return JSON only:
+Message: "${followUpMsg}"
+Conversation context: "${history}"
+
+Return: {
+  "suggested_stage": one of "new_enquiry"|"replied"|"interested"|"meet_arranged"|"met"|"active"|"gone_quiet",
+  "booking_detected": true/false,
+  "meet_detected": true/false,
+  "booking_summary": "brief summary e.g. 30 min walk Tuesday 8th" or null
+}`),
+      ]);
+
       const parsed = parseSections(raw);
       const draftSection = parsed.find(s => s.key === "draft");
       setSections(parsed);
       setDraftText(draftSection?.content || raw);
+
       const clientMsg = { role: "client", text: followUpMsg, date: nowStr() };
       const extra = parsed.find(s => s.key === "extra1");
       const freddieMsg = { role: "freddie", draft: draftSection?.content || raw, questions: extra?.content || null, date: nowStr() };
-      savePerson({ messages: [...(currentPerson.messages || []), clientMsg, freddieMsg], lastActionDate: nowStr() });
+
+      const newStage = intentResult.suggested_stage || currentPerson.stage;
+      savePerson({
+        messages: [...(currentPerson.messages || []), clientMsg, freddieMsg],
+        lastActionDate: nowStr(),
+        stage: newStage,
+      });
       setFollowUpMsg("");
+      setDetectedIntent(intentResult);
       setScreen("result");
     } catch { showToast("Couldn't generate — try again"); setScreen("thread"); }
+  };
+
+  const tweakDraft = async () => {
+    if (!tweakInput.trim()) return;
+    setTweaking(true);
+    try {
+      const raw = await callClaude(`You are helping Freddie, a dog walker. Here is his current draft reply:
+
+"${draftText}"
+
+He wants to make this change: "${tweakInput}"
+
+Rewrite the draft incorporating his request. Return ONLY the updated draft reply, nothing else. Keep Freddie's voice — warm, professional, British English.`, 800);
+      setDraftText(raw.trim());
+      setTweakInput("");
+    } catch { showToast("Couldn't update — try again"); }
+    setTweaking(false);
+  };
+
+  const saveBooking = () => {
+    if (!bookingForm || !currentPerson) return;
+    const visit = {
+      id: uid(),
+      personId: currentPerson.id,
+      serviceType: bookingForm.serviceType || currentPerson.serviceType || "dog_walk",
+      date: bookingForm.date || todayStr(),
+      time: bookingForm.time || "",
+      duration: bookingForm.duration || "",
+      status: bookingForm.isMeet ? "meet_greet" : "confirmed",
+      paid: false,
+      amount: "",
+    };
+    db.upsert("visits", visit);
+    if (bookingForm.isMeet) {
+      savePerson({ stage: "meet_arranged", lastActionDate: nowStr() });
+    } else {
+      savePerson({ stage: "active", lastActionDate: nowStr() });
+    }
+    setBookingForm(null);
+    showToast(bookingForm.isMeet ? "Meet & greet added to schedule ✓" : "Booking added to schedule ✓");
   };
 
   const nextQ = () => {
@@ -747,11 +851,72 @@ ONE TIP`;
   /* ── RESULT */
   if (screen === "result" && sections.length > 0) {
     const extra = sections.find(s => s.key === "extra1");
+    const showBookingPrompt = detectedIntent?.booking_detected && !bookingForm;
+    const showMeetPrompt = detectedIntent?.meet_detected && !detectedIntent?.booking_detected && !bookingForm;
+
     return (
       <div className="fade-up">
         <BackBtn onBack={() => setScreen("thread")} label="View Thread" />
         <div style={{ padding: "0 16px 24px" }}>
-          <div className="row mb-16">
+
+          {/* Stage update banner */}
+          {detectedIntent?.suggested_stage && detectedIntent.suggested_stage !== currentPerson?.stage && (
+            <div style={{ background: "rgba(0,184,148,0.08)", border: "1px solid rgba(0,184,148,0.25)", borderRadius: "var(--radius-sm)", padding: "10px 14px", marginBottom: 14 }}>
+              <div style={{ fontSize: 12, color: "var(--green)", fontWeight: 700, marginBottom: 2 }}>📊 Stage updated automatically</div>
+              <div className="text-sm text-muted">Moved to <strong style={{ color: "var(--text)" }}>{STAGE_MAP[detectedIntent.suggested_stage]?.label}</strong> based on their message</div>
+            </div>
+          )}
+
+          {/* Booking detected prompt */}
+          {showBookingPrompt && (
+            <div style={{ background: "rgba(108,92,231,0.1)", border: "1px solid rgba(108,92,231,0.3)", borderRadius: "var(--radius-sm)", padding: "14px", marginBottom: 14 }}>
+              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>🎉 Looks like a booking!</div>
+              <div className="text-sm text-muted mb-8">{detectedIntent.booking_summary || "They've confirmed — want to add this to your schedule?"}</div>
+              <button className="btn btn-green btn-sm" onClick={() => setBookingForm({ date: "", time: "", serviceType: currentPerson?.serviceType || "dog_walk", duration: "", isMeet: false })}>
+                Add to Schedule →
+              </button>
+            </div>
+          )}
+
+          {/* Meet detected prompt */}
+          {showMeetPrompt && (
+            <div style={{ background: "rgba(9,132,227,0.1)", border: "1px solid rgba(9,132,227,0.3)", borderRadius: "var(--radius-sm)", padding: "14px", marginBottom: 14 }}>
+              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>🤝 Meet & greet requested</div>
+              <div className="text-sm text-muted mb-8">Want to add the meet & greet to your schedule?</div>
+              <button className="btn btn-primary btn-sm" onClick={() => setBookingForm({ date: "", time: "", serviceType: "meet_greet", duration: "30 min", isMeet: true })}>
+                Add Meet & Greet →
+              </button>
+            </div>
+          )}
+
+          {/* Booking form */}
+          {bookingForm && (
+            <div style={{ background: "var(--card2)", border: "1px solid var(--border2)", borderRadius: "var(--radius-sm)", padding: "14px", marginBottom: 14 }}>
+              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12 }}>{bookingForm.isMeet ? "📅 Meet & Greet Details" : "📅 Booking Details"}</div>
+              <div className="input-group">
+                <div className="input-label">Date</div>
+                <input className="input" type="date" value={bookingForm.date} onChange={e => setBookingForm(b => ({ ...b, date: e.target.value }))} />
+              </div>
+              <div className="input-group">
+                <div className="input-label">Time</div>
+                <input className="input" type="time" value={bookingForm.time} onChange={e => setBookingForm(b => ({ ...b, time: e.target.value }))} />
+              </div>
+              {!bookingForm.isMeet && (
+                <div className="input-group">
+                  <div className="input-label">Service</div>
+                  <div className="chip-row">
+                    {SERVICES.map(s => <Chip key={s.id} label={s.icon + " " + s.label} active={bookingForm.serviceType === s.id} onClick={() => setBookingForm(b => ({ ...b, serviceType: s.id }))} />)}
+                  </div>
+                </div>
+              )}
+              <div className="btn-row mt-8" style={{ padding: 0 }}>
+                <button className="btn btn-ghost" onClick={() => setBookingForm(null)}>Cancel</button>
+                <button className="btn btn-green" disabled={!bookingForm.date} onClick={saveBooking}>Save to Schedule ✓</button>
+              </div>
+            </div>
+          )}
+
+          <div className="row mb-8">
             <div style={{ width: 38, height: 38, borderRadius: 10, background: typeColor + "22", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18 }}>{enquiryType?.icon}</div>
             <div><div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 15, letterSpacing: 1, color: typeColor }}>{enquiryType?.label}</div><div className="text-xs text-muted">{platform} · {new Date().toLocaleDateString("en-GB")}</div></div>
           </div>
@@ -760,6 +925,17 @@ ONE TIP`;
           <div className="text-xs text-muted mb-8">Tap to edit before copying</div>
           <textarea className="draft-box" value={draftText} onChange={e => setDraftText(e.target.value)} rows={9} />
           <CopyBtn text={draftText} />
+
+          {/* Tweak box */}
+          <div style={{ marginTop: 14, background: "var(--card2)", border: "1px solid var(--border2)", borderRadius: "var(--radius-sm)", padding: "12px" }}>
+            <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 700, marginBottom: 8 }}>✏️ WANT TO CHANGE SOMETHING?</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input className="input" style={{ fontSize: 13, padding: "9px 12px" }} placeholder='e.g. "make it shorter" or "add the key drop off"' value={tweakInput} onChange={e => setTweakInput(e.target.value)} onKeyDown={e => e.key === "Enter" && tweakDraft()} />
+              <button className="btn btn-primary btn-sm" disabled={!tweakInput.trim() || tweaking} style={{ flexShrink: 0, width: "auto" }} onClick={tweakDraft}>
+                {tweaking ? <Spinner /> : "Go"}
+              </button>
+            </div>
+          </div>
 
           {extra && (
             <div className="double-check-box mt-12">
@@ -773,6 +949,7 @@ ONE TIP`;
             <button className="btn btn-ghost" onClick={onBack}>Done</button>
           </div>
         </div>
+        {toast && <div className="toast">{toast}</div>}
       </div>
     );
   }
@@ -1218,12 +1395,84 @@ function TabSchedule({ onOpenPerson }) {
 }
 
 /* ─────────────────────────────────────────────
-   ROOT APP
+   TAB: PRICES
+───────────────────────────────────────────── */
+function TabPrices() {
+  const [prices, setPrices] = useState(() => getPrices());
+  const [editing, setEditing] = useState(null);
+  const [editVal, setEditVal] = useState("");
+
+  const startEdit = (p) => { setEditing(p.id); setEditVal(String(p.price)); };
+  const saveEdit = (p) => {
+    const next = prices.map(x => x.id === p.id ? { ...x, price: parseFloat(editVal) || x.price } : x);
+    setPrices(next); db.set("prices", next); setEditing(null);
+  };
+
+  const grouped = {};
+  for (const p of prices) {
+    if (!grouped[p.service]) grouped[p.service] = [];
+    grouped[p.service].push(p);
+  }
+
+  return (
+    <div>
+      <div style={{ padding: "16px 16px 8px" }}>
+        <div className="page-title">Prices</div>
+        <div className="page-sub">Your rates — tap any to edit. Used automatically in Direct enquiry replies.</div>
+      </div>
+
+      {Object.entries(grouped).map(([service, items]) => (
+        <div key={service}>
+          <div className="section-label">{service.toUpperCase()}</div>
+          {items.map(p => (
+            <div key={p.id} className="card card-tap" onClick={() => editing !== p.id && startEdit(p)}>
+              {editing === p.id ? (
+                <div onClick={e => e.stopPropagation()}>
+                  <div style={{ fontWeight: 600, marginBottom: 10 }}>{p.detail}</div>
+                  <div className="row">
+                    <span style={{ fontSize: 18, color: "var(--green)", fontWeight: 700 }}>£</span>
+                    <input className="input" type="number" value={editVal} onChange={e => setEditVal(e.target.value)} style={{ fontSize: 20, fontWeight: 700 }} autoFocus onKeyDown={e => e.key === "Enter" && saveEdit(p)} />
+                  </div>
+                  <div className="btn-row mt-8" style={{ padding: 0 }}>
+                    <button className="btn btn-ghost btn-sm" onClick={() => setEditing(null)}>Cancel</button>
+                    <button className="btn btn-green btn-sm" onClick={() => saveEdit(p)}>Save ✓</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="row-between">
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 15 }}>{p.detail}</div>
+                    <div className="text-sm text-muted">{p.prefix || ""}£{p.price}</div>
+                  </div>
+                  <div className="row">
+                    <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 24, color: "var(--green)" }}>£{p.price}</div>
+                    <span style={{ fontSize: 14, color: "var(--muted2)" }}>✏️</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      ))}
+
+      <div style={{ padding: "0 16px 16px" }}>
+        <div style={{ background: "rgba(108,92,231,0.08)", border: "1px solid rgba(108,92,231,0.2)", borderRadius: "var(--radius-sm)", padding: "12px 14px" }}>
+          <div style={{ fontSize: 12, color: "var(--purple)", fontWeight: 700, marginBottom: 4 }}>ℹ️ HOW THIS WORKS</div>
+          <div className="text-sm text-muted">When replying to a Direct or Other enquiry, the AI uses these prices automatically. Rover and Bark set their own rates — prices are never mentioned there.</div>
+        </div>
+      </div>
+      <div style={{ height: 16 }} />
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
 ───────────────────────────────────────────── */
 const TABS = [
   { id: "today",    label: "Today",    icon: "🏠" },
   { id: "people",   label: "People",   icon: "🐾" },
   { id: "schedule", label: "Schedule", icon: "📅" },
+  { id: "prices",   label: "Prices",   icon: "💷" },
 ];
 
 export default function App() {
@@ -1262,6 +1511,7 @@ export default function App() {
           {tab === "today"    && <TabToday    key={tick} onOpenPerson={setOpenPersonId} />}
           {tab === "people"   && <TabPeople   key={tick} onOpenPerson={setOpenPersonId} onNewEnquiry={() => setShowNewEnquiry(true)} />}
           {tab === "schedule" && <TabSchedule key={tick} onOpenPerson={setOpenPersonId} />}
+          {tab === "prices"   && <TabPrices   key={tick} />}
         </div>
         <nav className="bottom-nav">
           {TABS.map(t => (
