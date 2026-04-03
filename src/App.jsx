@@ -391,6 +391,7 @@ function MessagingTool({ contact, onBack, onSaved }) {
   const [aiQuestions, setAiQuestions] = useState([]);
   const [currentQ, setCurrentQ] = useState(0);
   const [draft, setDraft] = useState("");
+  const [editedDraft, setEditedDraft] = useState("");
   const [doubleCheck, setDoubleCheck] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -488,6 +489,7 @@ Maximum 3 questions. If none needed, return { "questions": [] }`);
       const draftMatch = text.match(/DRAFT REPLY\s*([\s\S]*?)(?=DOUBLE CHECK|$)/i);
       const checkMatch = text.match(/DOUBLE CHECK\s*([\s\S]*)/i);
       setDraft(draftMatch?.[1]?.trim() || text.trim());
+      setEditedDraft(draftMatch?.[1]?.trim() || text.trim());
       setDoubleCheck(checkMatch?.[1]?.trim() || "");
 
       if (contact) {
@@ -659,7 +661,6 @@ Maximum 3 questions. If none needed, return { "questions": [] }`);
 
   // STEP: draft
   if (step === "draft") {
-    const [editedDraft, setEditedDraft] = useState(draft);
     return (
       <div>
         <BackBtn onBack={onBack} label="Done" />
@@ -1170,27 +1171,11 @@ function TabToday({ onOpenContact, onOpenMessage, refresh }) {
 
   return (
     <div>
-      {showNewVisit && <NewVisitModal onSave={() => setTick(t => t + 1)} onClose={() => setShowNewVisit(false)} />}
-
       {/* Header */}
-      <div style={{ padding: "20px 16px 0" }}>
+      <div style={{ padding: "20px 16px 12px" }}>
         <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 13, letterSpacing: 2, color: "var(--muted)", marginBottom: 4 }}>WALKS & WHISKERS</div>
         <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 32, lineHeight: 1 }}>{greeting}, Freddie 👋</div>
         <div style={{ color: "var(--muted)", fontSize: 13, marginTop: 4 }}>{new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}</div>
-      </div>
-
-      {/* Quick add */}
-      <div className="btn-row mt-16">
-        <button className="btn btn-primary" onClick={() => setShowNewVisit(true)}>+ Book Visit</button>
-      </div>
-
-      {/* Earnings */}
-      <div className="earnings-card">
-        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 13, letterSpacing: 1.5, color: "var(--muted)", marginBottom: 8 }}>THIS WEEK</div>
-        <div className="row-between">
-          <div><div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, color: "var(--green)" }}>£{earned.toFixed(0)}</div><div className="text-xs text-muted">earned</div></div>
-          {outstanding > 0 && <div style={{ textAlign: "right" }}><div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "var(--yellow)" }}>£{outstanding.toFixed(0)}</div><div className="text-xs text-muted">outstanding</div></div>}
-        </div>
       </div>
 
       {/* Walks today */}
@@ -1265,6 +1250,16 @@ function TabToday({ onOpenContact, onOpenMessage, refresh }) {
           </div>
         ))}
       </>}
+
+      {/* Earnings — tucked at the bottom */}
+      <div className="section-label">THIS WEEK</div>
+      <div className="earnings-card">
+        <div className="row-between">
+          <div><div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 26, color: "var(--green)" }}>£{earned.toFixed(0)}</div><div className="text-xs text-muted">earned</div></div>
+          {outstanding > 0 && <div style={{ textAlign: "right" }}><div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, color: "var(--yellow)" }}>£{outstanding.toFixed(0)}</div><div className="text-xs text-muted">outstanding</div></div>}
+          {earned === 0 && outstanding === 0 && <div className="text-sm text-muted">No paid visits logged yet</div>}
+        </div>
+      </div>
 
       <div style={{ height: 16 }} />
     </div>
@@ -1389,9 +1384,6 @@ function TabClients({ onOpenContact }) {
    TAB: SCHEDULE
 ───────────────────────────────────────────── */
 function TabSchedule({ onOpenContact }) {
-  const [showNewVisit, setShowNewVisit] = useState(false);
-  const [tick, setTick] = useState(0);
-
   const visits = db.getAll("visits").filter(v => v.status === "confirmed" || v.status === "completed").sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
   const contacts = db.getAll("contacts");
 
@@ -1443,19 +1435,13 @@ function TabSchedule({ onOpenContact }) {
 
   return (
     <div>
-      {showNewVisit && <NewVisitModal onSave={() => setTick(t => t + 1)} onClose={() => setShowNewVisit(false)} />}
-
       <div className="page-header mt-8">
         <div className="page-title">Schedule</div>
         <div className="page-sub">All upcoming confirmed visits</div>
       </div>
 
-      <div className="btn-row mt-12">
-        <button className="btn btn-primary" onClick={() => setShowNewVisit(true)}>+ Book Visit</button>
-      </div>
-
       {upcomingDates.length === 0 && (
-        <div className="empty-state"><div className="icon">📅</div><h3>Nothing booked yet</h3><p>Tap + Book Visit to add your first confirmed walk</p></div>
+        <div className="empty-state"><div className="icon">📅</div><h3>Nothing booked yet</h3><p>Visits will appear here once confirmed through messaging</p></div>
       )}
 
       {upcomingDates.map(d => renderDateGroup(d, false))}
