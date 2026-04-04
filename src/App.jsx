@@ -43,7 +43,7 @@ const CSS = `
   .btn-primary { background: var(--purple); color: white; }
   .btn-green { background: var(--green); color: #001a12; }
   .btn-ghost { background: transparent; border: 1px solid var(--border2); color: var(--muted); }
-  .btn-sm { padding: 9px 14px; font-size: 13px; width: auto; border-radius: var(--radius-sm); }
+  .btn-orange { background: var(--orange); color: white; }
   .btn-row { display: flex; gap: 10px; padding: 0 16px; margin-bottom: 12px; }
   .btn-row .btn { flex: 1; }
 
@@ -283,18 +283,29 @@ async function callClaudeJSON(prompt) {
 
 function parseSections(text) {
   const sections = [];
+  const sectionHeaders = ["DRAFT REPLY", "QUESTIONS TO ASK", "WHAT TO MENTION", "MISSING INFO TO GET", "ONE TIP", "DOUBLE CHECK"];
   const patterns = [
     { key: "draft",  labels: ["DRAFT REPLY"] },
     { key: "extra1", labels: ["QUESTIONS TO ASK", "WHAT TO MENTION", "MISSING INFO TO GET", "ONE TIP"] },
   ];
+
   for (const p of patterns) {
     for (const label of p.labels) {
       const idx = text.toUpperCase().indexOf(label);
       if (idx !== -1) {
-        let content = text.slice(idx + label.length).replace(/^[\s:*#-]+/, "");
-        const next = content.search(/\n[A-Z][A-Z ]{2,}(\n|:)/);
-        if (next !== -1) content = content.slice(0, next);
-        sections.push({ key: p.key, label, content: content.trim() });
+        let content = text.slice(idx + label.length).replace(/^[\s:*#\-]+/, "");
+        // Cut at next section header
+        let cutAt = content.length;
+        for (const h of sectionHeaders) {
+          const hi = content.toUpperCase().indexOf(h);
+          if (hi > 0 && hi < cutAt) cutAt = hi;
+        }
+        content = content.slice(0, cutAt).trim();
+        // If this is the extra section and it says "no questions needed" or similar — skip it
+        if (p.key === "extra1" && /no (additional )?questions? needed|nothing (else )?to (add|ask)|all (key )?information (has been )?provided/i.test(content)) {
+          break;
+        }
+        if (content) sections.push({ key: p.key, label, content });
         break;
       }
     }
@@ -552,6 +563,15 @@ Rewrite the draft incorporating his request. Return ONLY the updated draft reply
 
   const saveBooking = () => {
     if (!bookingForm || !currentPerson) return;
+    // Conflict check
+    const existingVisits = db.getAll("visits").filter(v =>
+      v.date === bookingForm.date && v.time && bookingForm.time &&
+      v.time === bookingForm.time && v.personId !== currentPerson.id
+    );
+    if (existingVisits.length > 0 && !bookingForm.conflictAcknowledged) {
+      setBookingForm(b => ({ ...b, conflict: true }));
+      return;
+    }
     const visit = {
       id: uid(),
       personId: currentPerson.id,
@@ -559,7 +579,8 @@ Rewrite the draft incorporating his request. Return ONLY the updated draft reply
       date: bookingForm.date || todayStr(),
       time: bookingForm.time || "",
       duration: bookingForm.duration || "",
-      status: bookingForm.isMeet ? "meet_greet" : "confirmed",
+      status: bookingForm.isMeet ? "confirmed" : "confirmed",
+      isMeetGreet: bookingForm.isMeet || false,
       paid: false,
       amount: "",
     };
@@ -573,6 +594,40 @@ Rewrite the draft incorporating his request. Return ONLY the updated draft reply
     showToast(bookingForm.isMeet ? "Meet & greet added to schedule ✓" : "Booking added to schedule ✓");
   };
 
+  // Pre-populate booking form from extracted conversation data
+  const openBookingForm = (isMeet) => {
+    const ext = currentPerson?.extracted || {};
+    // Try to parse a date from extracted dates field
+    let preDate = "";
+    let preTime = "";
+    if (ext.dates && ext.dates !== "null") {
+      // Try to extract a date — just use as-is if we can't parse it
+      const dateStr = ext.dates;
+      // Simple attempt: look for patterns like "8th April", "Tuesday 8th", "next Monday"
+      const parsed = new Date(dateStr);
+      if (!isNaN(parsed.getTime())) {
+        preDate = parsed.toISOString().split("T")[0];
+      }
+      // Look for time pattern
+      const timeMatch = dateStr.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
+      if (timeMatch) {
+        let h = parseInt(timeMatch[1]);
+        const m = timeMatch[2] || "00";
+        if (timeMatch[3].toLowerCase() === "pm" && h < 12) h += 12;
+        if (timeMatch[3].toLowerCase() === "am" && h === 12) h = 0;
+        preTime = `${String(h).padStart(2,"0")}:${m}`;
+      }
+    }
+    setBookingForm({
+      date: preDate,
+      time: preTime,
+      serviceType: currentPerson?.serviceType || "dog_walk",
+      duration: ext.service?.includes("60") ? "60 min" : "30 min",
+      isMeet,
+      datesHint: (ext.dates && ext.dates !== "null") ? ext.dates : null,
+    });
+  };
+
   const nextQ = () => {
     if (!qInput.trim()) return;
     const q = dynamicQs[qStep];
@@ -584,7 +639,7 @@ Rewrite the draft incorporating his request. Return ONLY the updated draft reply
 
   const skipQ = () => {
     const q = dynamicQs[qStep];
-    const next = { ...qAnswers, [q.field]: "unknown" };
+    const next = { ...qAnswers, [q.field]: "" };
     setQAnswers(next); setQInput("");
     if (qStep < dynamicQs.length - 1) setQStep(q => q + 1);
     else generateReply(next);
@@ -595,33 +650,64 @@ Rewrite the draft incorporating his request. Return ONLY the updated draft reply
   /* ── THREAD */
   if (screen === "thread") {
     const msgs = currentPerson?.messages || [];
+    const [editingField, setEditingField] = useState(null);
+    const [editingVal, setEditingVal] = useState("");
+
+    const saveFieldEdit = (field) => {
+      const people = db.getAll("people");
+      const idx = people.findIndex(p => p.id === currentPerson.id);
+      if (idx >= 0) {
+        people[idx].extracted = { ...(people[idx].extracted || {}), [field]: editingVal };
+        db.set("people", people);
+        setCurrentPerson(people[idx]);
+        onPersonUpdated?.();
+      }
+      setEditingField(null);
+    };
+
+    // Show all fields, not just ones with values — so Freddie can fill in blanks
+    const allExtracted = { ...(currentPerson?.extracted || {}) };
+
     return (
       <div className="fade-up">
         <BackBtn onBack={onBack} />
         <div style={{ padding: "0 16px 16px" }}>
 
-          {/* What we know */}
-          {currentPerson?.extracted && Object.values(currentPerson.extracted).some(v => v && v !== "null") && (
-            <>
-              <div className="section-label">WHAT WE KNOW</div>
-              <div className="card" style={{ marginLeft: 0, marginRight: 0 }}>
-                {Object.entries(FIELD_LABELS).map(([field, meta]) => {
-                  const val = currentPerson.extracted[field];
-                  if (!val || val === "null") return null;
-                  return (
-                    <div key={field} className="found-row">
+          {/* What we know — editable */}
+          <div className="section-label">WHAT WE KNOW</div>
+          <div className="card" style={{ marginLeft: 0, marginRight: 0 }}>
+            {Object.entries(FIELD_LABELS).map(([field, meta]) => {
+              const val = allExtracted[field];
+              const hasVal = val && val !== "null" && val !== "";
+              if (editingField === field) {
+                return (
+                  <div key={field} className="found-row" style={{ flexDirection: "column", gap: 8 }}>
+                    <div className="row">
                       <span style={{ fontSize: 16, width: 22, flexShrink: 0 }}>{meta.icon}</span>
-                      <div className="flex-1">
-                        <div style={{ fontSize: 11, color: "var(--muted2)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>{meta.label}</div>
-                        <div style={{ fontSize: 13, color: "#c8d0f0", marginTop: 2 }}>{val}</div>
-                      </div>
-                      <span className="text-green">✓</span>
+                      <div style={{ fontSize: 11, color: "var(--muted2)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>{meta.label}</div>
                     </div>
-                  );
-                })}
-              </div>
-            </>
-          )}
+                    <div className="row">
+                      <input className="input" style={{ fontSize: 13, padding: "8px 10px" }} value={editingVal} onChange={e => setEditingVal(e.target.value)} autoFocus onKeyDown={e => e.key === "Enter" && saveFieldEdit(field)} placeholder={`Enter ${meta.label.toLowerCase()}...`} />
+                      <button className="btn btn-green btn-sm" style={{ flexShrink: 0, marginLeft: 8 }} onClick={() => saveFieldEdit(field)}>✓</button>
+                      <button className="btn btn-ghost btn-sm" style={{ flexShrink: 0, marginLeft: 4 }} onClick={() => setEditingField(null)}>✕</button>
+                    </div>
+                  </div>
+                );
+              }
+              return (
+                <div key={field} className="found-row" style={{ cursor: "pointer" }} onClick={() => { setEditingField(field); setEditingVal(hasVal ? val : ""); }}>
+                  <span style={{ fontSize: 16, width: 22, flexShrink: 0 }}>{meta.icon}</span>
+                  <div className="flex-1">
+                    <div style={{ fontSize: 11, color: "var(--muted2)", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>{meta.label}</div>
+                    <div style={{ fontSize: 13, color: hasVal ? "#c8d0f0" : "var(--muted2)", marginTop: 2, fontStyle: hasVal ? "normal" : "italic" }}>
+                      {hasVal ? val : "Tap to add..."}
+                    </div>
+                  </div>
+                  {hasVal ? <span className="text-green" style={{ fontSize: 12 }}>✓</span> : <span className="text-muted" style={{ fontSize: 12 }}>✏️</span>}
+                </div>
+              );
+            })}
+          </div>
 
           {/* Conversation */}
           {msgs.length > 0 && <>
@@ -871,10 +957,8 @@ Rewrite the draft incorporating his request. Return ONLY the updated draft reply
           {showBookingPrompt && (
             <div style={{ background: "rgba(108,92,231,0.1)", border: "1px solid rgba(108,92,231,0.3)", borderRadius: "var(--radius-sm)", padding: "14px", marginBottom: 14 }}>
               <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>🎉 Looks like a booking!</div>
-              <div className="text-sm text-muted mb-8">{detectedIntent.booking_summary || "They've confirmed — want to add this to your schedule?"}</div>
-              <button className="btn btn-green btn-sm" onClick={() => setBookingForm({ date: "", time: "", serviceType: currentPerson?.serviceType || "dog_walk", duration: "", isMeet: false })}>
-                Add to Schedule →
-              </button>
+              <div className="text-sm text-muted mb-8">{detectedIntent.booking_summary || "They've confirmed — add to schedule?"}</div>
+              <button className="btn btn-green btn-sm" onClick={() => openBookingForm(false)}>Add to Schedule →</button>
             </div>
           )}
 
@@ -882,32 +966,53 @@ Rewrite the draft incorporating his request. Return ONLY the updated draft reply
           {showMeetPrompt && (
             <div style={{ background: "rgba(9,132,227,0.1)", border: "1px solid rgba(9,132,227,0.3)", borderRadius: "var(--radius-sm)", padding: "14px", marginBottom: 14 }}>
               <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>🤝 Meet & greet requested</div>
-              <div className="text-sm text-muted mb-8">Want to add the meet & greet to your schedule?</div>
-              <button className="btn btn-primary btn-sm" onClick={() => setBookingForm({ date: "", time: "", serviceType: "meet_greet", duration: "30 min", isMeet: true })}>
-                Add Meet & Greet →
-              </button>
+              <div className="text-sm text-muted mb-8">Add the meet & greet to your schedule?</div>
+              <button className="btn btn-primary btn-sm" onClick={() => openBookingForm(true)}>Add Meet & Greet →</button>
             </div>
           )}
 
           {/* Booking form */}
           {bookingForm && (
             <div style={{ background: "var(--card2)", border: "1px solid var(--border2)", borderRadius: "var(--radius-sm)", padding: "14px", marginBottom: 14 }}>
-              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12 }}>{bookingForm.isMeet ? "📅 Meet & Greet Details" : "📅 Booking Details"}</div>
+              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>{bookingForm.isMeet ? "📅 Meet & Greet" : "📅 Booking"}</div>
+              {bookingForm.datesHint && (
+                <div style={{ background: "rgba(108,92,231,0.1)", borderRadius: 6, padding: "6px 10px", marginBottom: 12 }}>
+                  <div className="text-xs text-muted">From their message: <strong style={{ color: "var(--text)" }}>{bookingForm.datesHint}</strong></div>
+                </div>
+              )}
+              {bookingForm.conflict && (
+                <div style={{ background: "rgba(225,112,85,0.12)", border: "1px solid rgba(225,112,85,0.3)", borderRadius: 6, padding: "10px 12px", marginBottom: 12 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, color: "var(--orange)", marginBottom: 4 }}>⚠️ Diary clash!</div>
+                  <div className="text-xs text-muted">You already have something at this time. Still add it?</div>
+                  <div className="btn-row mt-8" style={{ padding: 0 }}>
+                    <button className="btn btn-ghost btn-sm" onClick={() => setBookingForm(b => ({ ...b, conflict: false }))}>Change time</button>
+                    <button className="btn btn-orange btn-sm" onClick={() => { setBookingForm(b => ({ ...b, conflict: false, conflictAcknowledged: true })); saveBooking(); }}>Add anyway</button>
+                  </div>
+                </div>
+              )}
               <div className="input-group">
                 <div className="input-label">Date</div>
-                <input className="input" type="date" value={bookingForm.date} onChange={e => setBookingForm(b => ({ ...b, date: e.target.value }))} />
+                <input className="input" type="date" value={bookingForm.date} onChange={e => setBookingForm(b => ({ ...b, date: e.target.value, conflict: false }))} />
               </div>
               <div className="input-group">
                 <div className="input-label">Time</div>
-                <input className="input" type="time" value={bookingForm.time} onChange={e => setBookingForm(b => ({ ...b, time: e.target.value }))} />
+                <input className="input" type="time" value={bookingForm.time} onChange={e => setBookingForm(b => ({ ...b, time: e.target.value, conflict: false }))} />
               </div>
               {!bookingForm.isMeet && (
-                <div className="input-group">
-                  <div className="input-label">Service</div>
-                  <div className="chip-row">
-                    {SERVICES.map(s => <Chip key={s.id} label={s.icon + " " + s.label} active={bookingForm.serviceType === s.id} onClick={() => setBookingForm(b => ({ ...b, serviceType: s.id }))} />)}
+                <>
+                  <div className="input-group">
+                    <div className="input-label">Service</div>
+                    <div className="chip-row">
+                      {SERVICES.map(s => <Chip key={s.id} label={s.icon + " " + s.label} active={bookingForm.serviceType === s.id} onClick={() => setBookingForm(b => ({ ...b, serviceType: s.id }))} />)}
+                    </div>
                   </div>
-                </div>
+                  <div className="input-group">
+                    <div className="input-label">Duration</div>
+                    <div className="chip-row">
+                      {["30 min","45 min","60 min"].map(d => <Chip key={d} label={d} active={bookingForm.duration === d} onClick={() => setBookingForm(b => ({ ...b, duration: d }))} />)}
+                    </div>
+                  </div>
+                </>
               )}
               <div className="btn-row mt-8" style={{ padding: 0 }}>
                 <button className="btn btn-ghost" onClick={() => setBookingForm(null)}>Cancel</button>
@@ -1094,6 +1199,19 @@ function PersonDetail({ personId, onBack, onUpdate }) {
         {person.stage !== "active" && <button className="btn btn-green btn-sm" onClick={() => moveStage("active")}>Make Active ✓</button>}
       </div>
 
+      <div className="btn-row" style={{ marginTop: 0 }}>
+        <button className="btn btn-ghost btn-sm" style={{ color: "var(--yellow)", borderColor: "rgba(253,203,110,0.3)" }} onClick={() => moveStage("not_proceeding")}>Archive</button>
+        <button className="btn btn-ghost btn-sm" style={{ color: "var(--red)", borderColor: "rgba(214,48,49,0.3)" }} onClick={() => {
+          if (window.confirm(`Delete ${person.name || "this person"}? This cannot be undone.`)) {
+            db.remove("people", personId);
+            db.set("dogs", db.getAll("dogs").filter(d => d.personId !== personId));
+            db.set("cats", db.getAll("cats").filter(c => c.personId !== personId));
+            db.set("visits", db.getAll("visits").filter(v => v.personId !== personId));
+            onBack();
+          }
+        }}>Delete</button>
+      </div>
+
       {/* Contact */}
       <div className="section-label">Contact</div>
       <div className="card">
@@ -1160,7 +1278,7 @@ function TabToday({ onOpenPerson }) {
 
   const people = db.getAll("people");
   const visits = db.getAll("visits");
-  const todayVisits = visits.filter(v => v.date === todayStr() && v.status !== "cancelled").sort((a, b) => (a.time||"").localeCompare(b.time||""));
+  const todayVisits = visits.filter(v => v.date === todayStr() && v.status !== "cancelled" && v.status !== "completed").sort((a, b) => (a.time||"").localeCompare(b.time||""));
   const actions = computeActions(people);
   const waiting = people.filter(p => p.stage === "replied");
 
@@ -1204,8 +1322,8 @@ function TabToday({ onOpenPerson }) {
                 <CheckBox done={done} onToggle={() => toggleVisit(v.id)} />
                 <div style={{ flex: 1, cursor: "pointer" }} onClick={() => p && onOpenPerson(p.id)}>
                   <div className="row-between">
-                    <div style={{ fontWeight: 700, fontSize: 16 }}>{v.time || "—"} · {dogs.map(d => d.name).join(", ") || "Dog"}</div>
-                    <span className="badge badge-purple">{v.duration || SERVICE_MAP[v.serviceType]?.label}</span>
+                    <div style={{ fontWeight: 700, fontSize: 16 }}>{v.time || "—"} · {v.isMeetGreet ? "Meet & Greet" : dogs.map(d => d.name).join(", ") || "Dog"}</div>
+                    <span className={`badge ${v.isMeetGreet ? "badge-yellow" : "badge-purple"}`}>{v.isMeetGreet ? "🤝 Meet" : (v.duration || SERVICE_MAP[v.serviceType]?.label)}</span>
                   </div>
                   <div className="text-sm text-muted mt-4">{p?.name} · {(p?.address || p?.extracted?.location || "").split(",")[0]}</div>
                   <div className="text-xs text-muted mt-4">{SERVICE_MAP[v.serviceType]?.icon} {SERVICE_MAP[v.serviceType]?.label}</div>
@@ -1285,12 +1403,25 @@ function TabPeople({ onOpenPerson, onNewEnquiry }) {
     { id: "not_proceeding", label: "Not proceeding" },
   ];
 
+  const STAGE_PRIORITY = { new_enquiry: 0, replied: 1, interested: 2, meet_arranged: 3, met: 4, active: 5, gone_quiet: 6, not_proceeding: 7 };
+
   const filtered = people.filter(p => {
     if (filter === "active") return p.stage === "active";
     if (filter === "enquiries") return !["active","not_proceeding"].includes(p.stage);
     if (filter === "not_proceeding") return p.stage === "not_proceeding";
     return true;
-  }).filter(p => !search || (p.name||"").toLowerCase().includes(search.toLowerCase()) || (p.address||"").toLowerCase().includes(search.toLowerCase()));
+  }).filter(p => !search || (p.name||"").toLowerCase().includes(search.toLowerCase()) || (p.address||"").toLowerCase().includes(search.toLowerCase()))
+    .sort((a, b) => {
+      // Urgent first: new enquiries and unreplied messages
+      const aUrgent = a.stage === "new_enquiry" ? -2 : 0;
+      const bUrgent = b.stage === "new_enquiry" ? -2 : 0;
+      if (aUrgent !== bUrgent) return aUrgent - bUrgent;
+      // Then by stage order
+      const stageDiff = (STAGE_PRIORITY[a.stage] || 9) - (STAGE_PRIORITY[b.stage] || 9);
+      if (stageDiff !== 0) return stageDiff;
+      // Then most recently active
+      return new Date(b.lastActionDate || b.createdAt || 0) - new Date(a.lastActionDate || a.createdAt || 0);
+    });
 
   return (
     <div>
@@ -1366,9 +1497,9 @@ function TabSchedule({ onOpenPerson }) {
                 <div>
                   <div className="row" style={{ gap: 6 }}>
                     <span style={{ fontWeight: 700, fontSize: 14 }}>{v.time || "—"}</span>
-                    <span style={{ fontWeight: 600, fontSize: 14 }}>{SERVICE_MAP[v.serviceType]?.icon} {dogs.map(d => d.name).join(", ") || p?.name || "—"}</span>
+                    <span style={{ fontWeight: 600, fontSize: 14 }}>{v.isMeetGreet ? "🤝" : SERVICE_MAP[v.serviceType]?.icon} {v.isMeetGreet ? "Meet & Greet" : dogs.map(d => d.name).join(", ") || p?.name || "—"}</span>
                   </div>
-                  <div className="text-xs text-muted mt-2">{SERVICE_MAP[v.serviceType]?.label} {v.duration ? `· ${v.duration}` : ""}</div>
+                  <div className="text-xs text-muted mt-2">{v.isMeetGreet ? "Meet & greet" : SERVICE_MAP[v.serviceType]?.label} {v.duration ? `· ${v.duration}` : ""}</div>
                   {p && <div className="text-xs text-muted">{(p.address || p.extracted?.location || "").split(",")[0]}</div>}
                 </div>
                 {v.status === "completed" && <span className="badge badge-green">Done</span>}
