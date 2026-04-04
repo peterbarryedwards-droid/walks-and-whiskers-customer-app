@@ -385,7 +385,9 @@ function MessagingFlow({ person, onBack, onPersonUpdated }) {
   const [detectedIntent, setDetectedIntent] = useState(null);
   const [tweakInput, setTweakInput] = useState("");
   const [tweaking, setTweaking] = useState(false);
-  const [bookingForm, setBookingForm] = useState(null); // null | { date, time, serviceType, duration }
+  const [bookingForm, setBookingForm] = useState(null);
+  const [editingField, setEditingField] = useState(null);
+  const [editingVal, setEditingVal] = useState("");
   const [currentPerson, setCurrentPerson] = useState(person);
   const inputRef = useRef(null);
 
@@ -563,69 +565,136 @@ Rewrite the draft incorporating his request. Return ONLY the updated draft reply
 
   const saveBooking = () => {
     if (!bookingForm || !currentPerson) return;
-    // Conflict check
-    const existingVisits = db.getAll("visits").filter(v =>
+
+    if (bookingForm.bulk) {
+      // Save multiple visits
+      const selected = bookingForm.bulkDates.filter(d => d.selected && d.date);
+      for (const d of selected) {
+        // Conflict check
+        const clash = db.getAll("visits").find(v => v.date === d.date && v.time && d.time && v.time === d.time && v.personId !== currentPerson.id);
+        if (clash && !bookingForm.conflictAcknowledged) {
+          setBookingForm(b => ({ ...b, conflict: true, conflictDate: d.date }));
+          return;
+        }
+        db.upsert("visits", {
+          id: uid(), personId: currentPerson.id,
+          serviceType: bookingForm.serviceType || "dog_walk",
+          date: d.date, time: d.time, duration: bookingForm.duration || "30 min",
+          status: "confirmed", isMeetGreet: false, paid: false, amount: "",
+        });
+      }
+      savePerson({ stage: "active", lastActionDate: nowStr() });
+      setBookingForm(null);
+      showToast(`${selected.length} visit${selected.length !== 1 ? "s" : ""} added to schedule ✓`);
+      return;
+    }
+
+    // Single booking
+    const clash = db.getAll("visits").find(v =>
       v.date === bookingForm.date && v.time && bookingForm.time &&
       v.time === bookingForm.time && v.personId !== currentPerson.id
     );
-    if (existingVisits.length > 0 && !bookingForm.conflictAcknowledged) {
+    if (clash && !bookingForm.conflictAcknowledged) {
       setBookingForm(b => ({ ...b, conflict: true }));
       return;
     }
-    const visit = {
-      id: uid(),
-      personId: currentPerson.id,
+    db.upsert("visits", {
+      id: uid(), personId: currentPerson.id,
       serviceType: bookingForm.serviceType || currentPerson.serviceType || "dog_walk",
       date: bookingForm.date || todayStr(),
-      time: bookingForm.time || "",
-      duration: bookingForm.duration || "",
-      status: bookingForm.isMeet ? "confirmed" : "confirmed",
-      isMeetGreet: bookingForm.isMeet || false,
-      paid: false,
-      amount: "",
-    };
-    db.upsert("visits", visit);
+      time: bookingForm.time || "", duration: bookingForm.duration || "",
+      status: "confirmed", isMeetGreet: bookingForm.isMeet || false,
+      paid: false, amount: "",
+    });
     if (bookingForm.isMeet) {
       savePerson({ stage: "meet_arranged", lastActionDate: nowStr() });
     } else {
       savePerson({ stage: "active", lastActionDate: nowStr() });
     }
     setBookingForm(null);
-    showToast(bookingForm.isMeet ? "Meet & greet added to schedule ✓" : "Booking added to schedule ✓");
+    showToast(bookingForm.isMeet ? "Meet & greet added ✓" : "Booking added to schedule ✓");
   };
 
-  // Pre-populate booking form from extracted conversation data
+  const saveFieldEdit = (field) => {
+    const people = db.getAll("people");
+    const idx = people.findIndex(p => p.id === currentPerson?.id);
+    if (idx >= 0) {
+      people[idx].extracted = { ...(people[idx].extracted || {}), [field]: editingVal };
+      db.set("people", people);
+      setCurrentPerson(people[idx]);
+      onPersonUpdated?.();
+    }
+    setEditingField(null);
+  };
+
+  // Parse multiple dates/times from a freetext string like "Tuesday Aug 11th at 10:30am and 3:30pm"
+  const parseBulkDates = (dateStr) => {
+    if (!dateStr || dateStr === "null") return [];
+    const results = [];
+    // Extract times
+    const timeMatches = [...dateStr.matchAll(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)/gi)];
+    const times = timeMatches.map(m => {
+      let h = parseInt(m[1]);
+      const min = m[2] || "00";
+      if (m[3].toLowerCase() === "pm" && h < 12) h += 12;
+      if (m[3].toLowerCase() === "am" && h === 12) h = 0;
+      return `${String(h).padStart(2,"0")}:${min}`;
+    });
+    // Extract date-like strings — look for day+month patterns
+    const datePatterns = dateStr.match(/(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)?\s*(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s*\d{1,2}(?:st|nd|rd|th)?|\d{1,2}(?:st|nd|rd|th)?\s+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)/gi);
+    const dates = (datePatterns || []).map(d => {
+      // Try to parse — add current year if needed
+      const withYear = `${d} ${new Date().getFullYear()}`;
+      const parsed = new Date(withYear);
+      if (!isNaN(parsed.getTime())) {
+        return parsed.toISOString().split("T")[0];
+      }
+      return null;
+    }).filter(Boolean);
+
+    if (dates.length === 0 && times.length === 0) return [];
+    // Create one entry per date × time combination
+    if (dates.length > 0 && times.length > 0) {
+      for (const date of dates) {
+        for (const time of times) {
+          results.push({ date, time });
+        }
+      }
+    } else if (dates.length > 0) {
+      for (const date of dates) results.push({ date, time: "" });
+    } else if (times.length > 0) {
+      for (const time of times) results.push({ date: "", time });
+    }
+    return results;
+  };
+
   const openBookingForm = (isMeet) => {
     const ext = currentPerson?.extracted || {};
-    // Try to parse a date from extracted dates field
-    let preDate = "";
-    let preTime = "";
-    if (ext.dates && ext.dates !== "null") {
-      // Try to extract a date — just use as-is if we can't parse it
-      const dateStr = ext.dates;
-      // Simple attempt: look for patterns like "8th April", "Tuesday 8th", "next Monday"
-      const parsed = new Date(dateStr);
-      if (!isNaN(parsed.getTime())) {
-        preDate = parsed.toISOString().split("T")[0];
-      }
-      // Look for time pattern
-      const timeMatch = dateStr.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)/i);
-      if (timeMatch) {
-        let h = parseInt(timeMatch[1]);
-        const m = timeMatch[2] || "00";
-        if (timeMatch[3].toLowerCase() === "pm" && h < 12) h += 12;
-        if (timeMatch[3].toLowerCase() === "am" && h === 12) h = 0;
-        preTime = `${String(h).padStart(2,"0")}:${m}`;
-      }
+    const datesHint = isMeet ? null : (ext.dates && ext.dates !== "null" ? ext.dates : null);
+    const bulkDates = datesHint ? parseBulkDates(datesHint) : [];
+
+    if (bulkDates.length > 1) {
+      // Multiple dates — show bulk confirm UI
+      setBookingForm({
+        bulk: true,
+        bulkDates: bulkDates.map(d => ({ ...d, selected: true })),
+        serviceType: currentPerson?.serviceType || "dog_walk",
+        duration: "30 min",
+        isMeet: false,
+        datesHint,
+      });
+    } else {
+      // Single or no date — show simple form
+      const single = bulkDates[0] || {};
+      setBookingForm({
+        date: single.date || "",
+        time: single.time || (isMeet ? "" : ""),
+        serviceType: isMeet ? "dog_walk" : (currentPerson?.serviceType || "dog_walk"),
+        duration: "30 min",
+        isMeet,
+        datesHint: isMeet ? null : datesHint,
+      });
     }
-    setBookingForm({
-      date: preDate,
-      time: preTime,
-      serviceType: currentPerson?.serviceType || "dog_walk",
-      duration: ext.service?.includes("60") ? "60 min" : "30 min",
-      isMeet,
-      datesHint: (ext.dates && ext.dates !== "null") ? ext.dates : null,
-    });
   };
 
   const nextQ = () => {
@@ -650,22 +719,6 @@ Rewrite the draft incorporating his request. Return ONLY the updated draft reply
   /* ── THREAD */
   if (screen === "thread") {
     const msgs = currentPerson?.messages || [];
-    const [editingField, setEditingField] = useState(null);
-    const [editingVal, setEditingVal] = useState("");
-
-    const saveFieldEdit = (field) => {
-      const people = db.getAll("people");
-      const idx = people.findIndex(p => p.id === currentPerson.id);
-      if (idx >= 0) {
-        people[idx].extracted = { ...(people[idx].extracted || {}), [field]: editingVal };
-        db.set("people", people);
-        setCurrentPerson(people[idx]);
-        onPersonUpdated?.();
-      }
-      setEditingField(null);
-    };
-
-    // Show all fields, not just ones with values — so Freddie can fill in blanks
     const allExtracted = { ...(currentPerson?.extracted || {}) };
 
     return (
@@ -974,49 +1027,80 @@ Rewrite the draft incorporating his request. Return ONLY the updated draft reply
           {/* Booking form */}
           {bookingForm && (
             <div style={{ background: "var(--card2)", border: "1px solid var(--border2)", borderRadius: "var(--radius-sm)", padding: "14px", marginBottom: 14 }}>
-              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>{bookingForm.isMeet ? "📅 Meet & Greet" : "📅 Booking"}</div>
+          {/* Booking form */}
+          {bookingForm && (
+            <div style={{ background: "var(--card2)", border: "1px solid var(--border2)", borderRadius: "var(--radius-sm)", padding: "14px", marginBottom: 14 }}>
+              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8 }}>
+                {bookingForm.isMeet ? "📅 Meet & Greet" : bookingForm.bulk ? `📅 ${bookingForm.bulkDates.filter(d=>d.selected).length} visits found` : "📅 Booking"}
+              </div>
               {bookingForm.datesHint && (
-                <div style={{ background: "rgba(108,92,231,0.1)", borderRadius: 6, padding: "6px 10px", marginBottom: 12 }}>
+                <div style={{ background: "rgba(108,92,231,0.1)", borderRadius: 6, padding: "6px 10px", marginBottom: 10 }}>
                   <div className="text-xs text-muted">From their message: <strong style={{ color: "var(--text)" }}>{bookingForm.datesHint}</strong></div>
                 </div>
               )}
               {bookingForm.conflict && (
-                <div style={{ background: "rgba(225,112,85,0.12)", border: "1px solid rgba(225,112,85,0.3)", borderRadius: 6, padding: "10px 12px", marginBottom: 12 }}>
+                <div style={{ background: "rgba(225,112,85,0.12)", border: "1px solid rgba(225,112,85,0.3)", borderRadius: 6, padding: "10px 12px", marginBottom: 10 }}>
                   <div style={{ fontWeight: 700, fontSize: 13, color: "var(--orange)", marginBottom: 4 }}>⚠️ Diary clash!</div>
-                  <div className="text-xs text-muted">You already have something at this time. Still add it?</div>
-                  <div className="btn-row mt-8" style={{ padding: 0 }}>
+                  <div className="text-xs text-muted mb-8">You already have something at this time.</div>
+                  <div className="btn-row" style={{ padding: 0 }}>
                     <button className="btn btn-ghost btn-sm" onClick={() => setBookingForm(b => ({ ...b, conflict: false }))}>Change time</button>
                     <button className="btn btn-orange btn-sm" onClick={() => { setBookingForm(b => ({ ...b, conflict: false, conflictAcknowledged: true })); saveBooking(); }}>Add anyway</button>
                   </div>
                 </div>
               )}
-              <div className="input-group">
-                <div className="input-label">Date</div>
-                <input className="input" type="date" value={bookingForm.date} onChange={e => setBookingForm(b => ({ ...b, date: e.target.value, conflict: false }))} />
-              </div>
-              <div className="input-group">
-                <div className="input-label">Time</div>
-                <input className="input" type="time" value={bookingForm.time} onChange={e => setBookingForm(b => ({ ...b, time: e.target.value, conflict: false }))} />
-              </div>
-              {!bookingForm.isMeet && (
+              {bookingForm.bulk ? (
                 <>
-                  <div className="input-group">
-                    <div className="input-label">Service</div>
-                    <div className="chip-row">
-                      {SERVICES.map(s => <Chip key={s.id} label={s.icon + " " + s.label} active={bookingForm.serviceType === s.id} onClick={() => setBookingForm(b => ({ ...b, serviceType: s.id }))} />)}
+                  <div className="text-xs text-muted mb-8">Tap to deselect any you don't want:</div>
+                  {bookingForm.bulkDates.map((d, i) => (
+                    <div key={i} className="card card-tap card-sm" style={{ margin: "0 0 6px", opacity: d.selected ? 1 : 0.4 }}
+                      onClick={() => setBookingForm(b => ({ ...b, bulkDates: b.bulkDates.map((x, j) => j === i ? { ...x, selected: !x.selected } : x) }))}>
+                      <div className="row-between">
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: 13 }}>{d.date ? new Date(d.date + "T12:00:00").toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" }) : "Date TBC"}</div>
+                          {d.time && <div className="text-xs text-muted">{d.time}</div>}
+                        </div>
+                        <span style={{ fontSize: 16 }}>{d.selected ? "✅" : "⬜"}</span>
+                      </div>
                     </div>
+                  ))}
+                  <div className="input-group mt-8">
+                    <div className="input-label">Service</div>
+                    <div className="chip-row">{SERVICES.map(s => <Chip key={s.id} label={s.icon + " " + s.label} active={bookingForm.serviceType === s.id} onClick={() => setBookingForm(b => ({ ...b, serviceType: s.id }))} />)}</div>
                   </div>
                   <div className="input-group">
                     <div className="input-label">Duration</div>
-                    <div className="chip-row">
-                      {["30 min","45 min","60 min"].map(d => <Chip key={d} label={d} active={bookingForm.duration === d} onClick={() => setBookingForm(b => ({ ...b, duration: d }))} />)}
-                    </div>
+                    <div className="chip-row">{["30 min","45 min","60 min"].map(d => <Chip key={d} label={d} active={bookingForm.duration === d} onClick={() => setBookingForm(b => ({ ...b, duration: d }))} />)}</div>
                   </div>
+                </>
+              ) : (
+                <>
+                  <div className="input-group">
+                    <div className="input-label">Date</div>
+                    <input className="input" type="date" value={bookingForm.date} onChange={e => setBookingForm(b => ({ ...b, date: e.target.value, conflict: false }))} />
+                  </div>
+                  <div className="input-group">
+                    <div className="input-label">Time</div>
+                    <input className="input" type="time" value={bookingForm.time} onChange={e => setBookingForm(b => ({ ...b, time: e.target.value, conflict: false }))} />
+                  </div>
+                  {!bookingForm.isMeet && (
+                    <>
+                      <div className="input-group">
+                        <div className="input-label">Service</div>
+                        <div className="chip-row">{SERVICES.map(s => <Chip key={s.id} label={s.icon + " " + s.label} active={bookingForm.serviceType === s.id} onClick={() => setBookingForm(b => ({ ...b, serviceType: s.id }))} />)}</div>
+                      </div>
+                      <div className="input-group">
+                        <div className="input-label">Duration</div>
+                        <div className="chip-row">{["30 min","45 min","60 min"].map(d => <Chip key={d} label={d} active={bookingForm.duration === d} onClick={() => setBookingForm(b => ({ ...b, duration: d }))} />)}</div>
+                      </div>
+                    </>
+                  )}
                 </>
               )}
               <div className="btn-row mt-8" style={{ padding: 0 }}>
                 <button className="btn btn-ghost" onClick={() => setBookingForm(null)}>Cancel</button>
-                <button className="btn btn-green" disabled={!bookingForm.date} onClick={saveBooking}>Save to Schedule ✓</button>
+                <button className="btn btn-green" disabled={bookingForm.bulk ? !bookingForm.bulkDates.some(d => d.selected && d.date) : !bookingForm.date} onClick={saveBooking}>
+                  {bookingForm.bulk ? `Add ${bookingForm.bulkDates.filter(d=>d.selected).length} visits ✓` : "Save to Schedule ✓"}
+                </button>
               </div>
             </div>
           )}
@@ -1352,8 +1436,8 @@ function TabToday({ onOpenPerson }) {
                       <span style={{ fontWeight: 600, fontSize: 14 }}>{action.label}</span>
                     </div>
                     {!done && p && (
-                      <button className="btn btn-primary btn-sm" style={{ marginLeft: 8, flexShrink: 0 }} onClick={() => onOpenPerson(p.id)}>
-                        💬 Reply
+                      <button className="btn btn-primary btn-sm" style={{ marginLeft: 8, flexShrink: 0, padding: "6px 10px", fontSize: 12 }} onClick={() => onOpenPerson(p.id)}>
+                        💬
                       </button>
                     )}
                   </div>
@@ -1428,7 +1512,7 @@ function TabPeople({ onOpenPerson, onNewEnquiry }) {
       <div style={{ padding: "16px 16px 8px" }}>
         <div className="row-between">
           <div className="page-title">People</div>
-          <button className="btn btn-primary btn-sm" onClick={onNewEnquiry}>+ New Enquiry</button>
+          <button className="btn btn-primary btn-sm" style={{ padding: "7px 12px", fontSize: 12 }} onClick={onNewEnquiry}>+ New</button>
         </div>
       </div>
       <div style={{ padding: "8px 16px" }}>
