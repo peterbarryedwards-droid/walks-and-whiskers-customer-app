@@ -1050,12 +1050,341 @@ function CatWizard({ personId, existingCat, onSave, onBack }) {
   );
 }
 
-/* PERSON DETAIL */
+/* ADD CLIENT FLOW — paste notes, AI extracts profile */
+function AddClient({ onSave, onBack }) {
+  const [step, setStep] = useState("paste"); // paste | loading | review
+  const [notes, setNotes] = useState("");
+  const [extracted, setExtracted] = useState(null);
+  const [toast, setToast] = useState(null);
+
+  const showToast = function(msg) { setToast(msg); setTimeout(function() { setToast(null); }, 3000); };
+
+  const analyse = async function() {
+    if (!notes.trim()) return;
+    setStep("loading");
+    const prompt = "You are helping Freddie, a dog walker, create a client record from notes.\n\n" +
+      "Notes:\n\"\"\"" + notes + "\"\"\"\n\n" +
+      "Extract all information visible. Return ONLY valid JSON:\n" +
+      "{\n" +
+      "  \"owner_name\": null,\n" +
+      "  \"phone\": null,\n" +
+      "  \"address\": null,\n" +
+      "  \"postcode\": null,\n" +
+      "  \"platform\": null,\n" +
+      "  \"service_type\": null,\n" +
+      "  \"rate\": null,\n" +
+      "  \"access_notes\": null,\n" +
+      "  \"pets\": [\n" +
+      "    {\n" +
+      "      \"type\": \"dog or cat\",\n" +
+      "      \"name\": null,\n" +
+      "      \"breed\": null,\n" +
+      "      \"age\": null,\n" +
+      "      \"size\": null,\n" +
+      "      \"personality\": null,\n" +
+      "      \"goodWithDogs\": null,\n" +
+      "      \"goodOnLead\": null,\n" +
+      "      \"motivation\": null,\n" +
+      "      \"recall\": null,\n" +
+      "      \"feeding\": null,\n" +
+      "      \"walkingSpots\": null,\n" +
+      "      \"healthIssues\": null,\n" +
+      "      \"vet\": null,\n" +
+      "      \"vetPhone\": null,\n" +
+      "      \"spooks\": null,\n" +
+      "      \"medication\": null\n" +
+      "    }\n" +
+      "  ],\n" +
+      "  \"job_notes\": null,\n" +
+      "  \"schedule\": null,\n" +
+      "  \"house_notes\": null\n" +
+      "}";
+    try {
+      const result = await callClaudeJSON(prompt);
+      setExtracted(result);
+      setStep("review");
+    } catch { showToast("Couldn't extract — try again"); setStep("paste"); }
+  };
+
+  const save = function() {
+    if (!extracted) return;
+    const personId = uid();
+    const person = {
+      id: personId,
+      name: extracted.owner_name || "Unknown",
+      phone: extracted.phone || "",
+      address: extracted.address || "",
+      postcode: extracted.postcode || "",
+      platform: extracted.platform || "Direct",
+      serviceType: extracted.service_type || "",
+      rate: extracted.rate || "",
+      accessNotes: extracted.access_notes || "",
+      stage: "active",
+      createdAt: nowStr(),
+      lastActionDate: nowStr(),
+      messages: [],
+      profileNotes: [{ id: uid(), date: nowStr(), text: notes, source: "add_client" }],
+      jobNotes: extracted.job_notes || "",
+      schedule: extracted.schedule || "",
+      houseNotes: extracted.house_notes || "",
+    };
+    db.upsert("people", person);
+    // Save pets
+    if (extracted.pets && extracted.pets.length > 0) {
+      extracted.pets.forEach(function(pet) {
+        if (!pet.name) return;
+        if (pet.type === "cat") {
+          db.upsert("cats", { id: uid(), personId, name: pet.name || "", age: pet.age || "", indoorOutdoor: "", feedingRoutine: pet.feeding || "", litterNotes: "", medication: pet.medication ? "Yes" : "No", medicationNotes: pet.medication || "", personality: pet.personality || "" });
+        } else {
+          db.upsert("dogs", { id: uid(), personId, name: pet.name || "", breed: pet.breed || "", age: pet.age || "", size: pet.size || "", goodWithDogs: pet.goodWithDogs || "", goodOnLead: pet.goodOnLead || "", healthIssues: pet.healthIssues ? "Yes" : "No", healthNotes: pet.healthIssues || "", spooks: pet.spooks || "", vet: pet.vet || "", vetPhone: pet.vetPhone || "", personality: (pet.personality || "") + (pet.motivation ? " Motivated by: " + pet.motivation : "") + (pet.recall ? " Recall: " + pet.recall : "") + (pet.walkingSpots ? " Walking spots: " + pet.walkingSpots : "") + (pet.feeding ? " Feeding: " + pet.feeding : ""), meetGreetResult: "" });
+        }
+      });
+    }
+    onSave(personId);
+  };
+
+  const InfoRow = function(props) {
+    if (!props.value) return null;
+    return (
+      <div className="row mt-4">
+        <span style={{ fontSize: 14, minWidth: 22 }}>{props.icon}</span>
+        <div><div className="text-xs text-muted">{props.label}</div><div className="text-sm">{props.value}</div></div>
+      </div>
+    );
+  };
+
+  if (step === "paste") {
+    return (
+      <div className="fade-up">
+        <BackBtn onBack={onBack} />
+        <div style={{ padding: "0 16px 24px" }}>
+          <div className="page-title mb-4">Add Client</div>
+          <div className="page-sub mb-16">Paste anything — a Gemini summary, meet and greet notes, a WhatsApp conversation. The AI will extract the key details.</div>
+          <textarea className="input" rows={12} value={notes} onChange={function(e) { setNotes(e.target.value); }} placeholder={"Paste your notes here...\n\nE.g. Dog profile: Tanga, Fox Red Lab, very gentle...\nOwner: Kate, 07xxx, 12 Church Street...\nVet: Stable Close Vets, 01962 841001..."} autoFocus />
+          <button className="btn btn-primary mt-12" disabled={!notes.trim()} style={{ opacity: notes.trim() ? 1 : 0.4 }} onClick={analyse}>
+            Extract Details →
+          </button>
+        </div>
+        {toast && <div className="toast">{toast}</div>}
+      </div>
+    );
+  }
+
+  if (step === "loading") {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "60vh", gap: 16 }}>
+        <Spinner large />
+        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, letterSpacing: 2, color: "var(--muted)" }}>READING YOUR NOTES...</div>
+        <div className="text-sm text-muted">Pulling out all the key details</div>
+      </div>
+    );
+  }
+
+  if (step === "review" && extracted) {
+    const pets = extracted.pets || [];
+    return (
+      <div className="fade-up">
+        <BackBtn onBack={function() { setStep("paste"); }} />
+        <div style={{ padding: "0 16px 24px" }}>
+          <div className="page-title mb-4">Review and Save</div>
+          <div className="page-sub mb-16">Check what I found, then save the record.</div>
+
+          <div className="section-label">Owner</div>
+          <div className="card">
+            <InfoRow icon="👤" label="Name" value={extracted.owner_name} />
+            <InfoRow icon="📞" label="Phone" value={extracted.phone} />
+            <InfoRow icon="🏠" label="Address" value={extracted.address} />
+            <InfoRow icon="📮" label="Postcode" value={extracted.postcode} />
+            <InfoRow icon="📱" label="Platform" value={extracted.platform} />
+            <InfoRow icon="💷" label="Rate" value={extracted.rate} />
+            <InfoRow icon="🔑" label="Access notes" value={extracted.access_notes} />
+            {!extracted.owner_name && <div className="text-sm text-muted" style={{ fontStyle: "italic" }}>No owner name found — you can add it after saving</div>}
+          </div>
+
+          {pets.map(function(pet, i) {
+            const icon = pet.type === "cat" ? "🐱" : "🐕";
+            return (
+              <div key={i}>
+                <div className="section-label">{icon + " " + (pet.name || "Pet " + (i + 1))}</div>
+                <div className="card">
+                  <InfoRow icon="🐾" label="Breed" value={pet.breed} />
+                  <InfoRow icon="🎂" label="Age" value={pet.age} />
+                  <InfoRow icon="💪" label="Personality" value={pet.personality} />
+                  <InfoRow icon="🎯" label="Motivation" value={pet.motivation} />
+                  <InfoRow icon="📣" label="Recall" value={pet.recall} />
+                  <InfoRow icon="🦮" label="On lead" value={pet.goodOnLead} />
+                  <InfoRow icon="🐶" label="With other dogs" value={pet.goodWithDogs} />
+                  <InfoRow icon="🍽️" label="Feeding" value={pet.feeding} />
+                  <InfoRow icon="📍" label="Walking spots" value={pet.walkingSpots} />
+                  <InfoRow icon="💊" label="Medication" value={pet.medication} />
+                  <InfoRow icon="⚕️" label="Health" value={pet.healthIssues} />
+                  <InfoRow icon="😨" label="Spooks" value={pet.spooks} />
+                  <InfoRow icon="🏥" label="Vet" value={pet.vet} />
+                  <InfoRow icon="📞" label="Vet phone" value={pet.vetPhone} />
+                  {!pet.name && <div className="text-sm text-muted" style={{ fontStyle: "italic" }}>No pet name found</div>}
+                </div>
+              </div>
+            );
+          })}
+          {pets.length === 0 && <div style={{ padding: "4px 0" }}><div className="text-sm text-muted" style={{ paddingLeft: 16 }}>No pets found — you can add them after saving</div></div>}
+
+          {(extracted.job_notes || extracted.schedule || extracted.house_notes) && (
+            <div>
+              <div className="section-label">Notes</div>
+              <div className="card">
+                <InfoRow icon="📋" label="Job notes" value={extracted.job_notes} />
+                <InfoRow icon="🗓️" label="Schedule" value={extracted.schedule} />
+                <InfoRow icon="🏡" label="House notes" value={extracted.house_notes} />
+              </div>
+            </div>
+          )}
+
+          <button className="btn btn-green mt-16" onClick={save}>Save Client Record ✓</button>
+          <button className="btn btn-ghost mt-8" onClick={function() { setStep("paste"); }}>Edit Notes</button>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}
+
+/* NOTES TAB — paste and AI extract */
+function NotesTab({ person, onUpdate }) {
+  const [pasteMode, setPasteMode] = useState(false);
+  const [pasteText, setPasteText] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [toast, setToast] = useState(null);
+  const showToast = function(msg) { setToast(msg); setTimeout(function() { setToast(null); }, 3000); };
+
+  const profileNotes = person.profileNotes || [];
+  const jobNotes = person.jobNotes || "";
+  const schedule = person.schedule || "";
+  const houseNotes = person.houseNotes || "";
+
+  const addFromPaste = async function() {
+    if (!pasteText.trim()) return;
+    setLoading(true);
+    const dogs = db.getAll("dogs").filter(function(d) { return d.personId === person.id; });
+    const cats = db.getAll("cats").filter(function(c) { return c.personId === person.id; });
+    const petNames = dogs.map(function(d) { return d.name; }).concat(cats.map(function(c) { return c.name; })).join(", ");
+    const prompt = "You are helping Freddie update a client record for " + (person.name || "a client") + " (pets: " + (petNames || "unknown") + ").\n\n" +
+      "New notes:\n\"\"\"" + pasteText + "\"\"\"\n\n" +
+      "Extract any useful information. Return ONLY valid JSON:\n" +
+      "{\n" +
+      "  \"job_notes\": \"summary of job details or null\",\n" +
+      "  \"schedule\": \"schedule info or null\",\n" +
+      "  \"house_notes\": \"house logistics or null\",\n" +
+      "  \"pet_updates\": [\n" +
+      "    { \"name\": \"pet name\", \"field\": \"field to update\", \"value\": \"new value\" }\n" +
+      "  ],\n" +
+      "  \"access_notes\": \"any access or key info or null\",\n" +
+      "  \"general\": \"anything else worth noting or null\"\n" +
+      "}";
+    try {
+      const result = await callClaudeJSON(prompt);
+      const all = db.getAll("people");
+      const idx = all.findIndex(function(p) { return p.id === person.id; });
+      if (idx >= 0) {
+        if (result.job_notes) all[idx].jobNotes = result.job_notes;
+        if (result.schedule) all[idx].schedule = result.schedule;
+        if (result.house_notes) all[idx].houseNotes = result.house_notes;
+        if (result.access_notes) all[idx].accessNotes = result.access_notes;
+        const newNote = { id: uid(), date: nowStr(), text: pasteText, extracted: result.general || null, source: "manual" };
+        all[idx].profileNotes = (all[idx].profileNotes || []).concat([newNote]);
+        db.set("people", all);
+        // Update pet fields if any
+        if (result.pet_updates && result.pet_updates.length > 0) {
+          const allDogs = db.getAll("dogs");
+          result.pet_updates.forEach(function(upd) {
+            const di = allDogs.findIndex(function(d) { return d.personId === person.id && d.name && d.name.toLowerCase() === (upd.name || "").toLowerCase(); });
+            if (di >= 0 && upd.field && upd.value) allDogs[di][upd.field] = upd.value;
+          });
+          db.set("dogs", allDogs);
+        }
+        if (onUpdate) onUpdate();
+        setPasteText(""); setPasteMode(false);
+        showToast("Notes added ✓");
+      }
+    } catch { showToast("Couldn't extract — try again"); }
+    setLoading(false);
+  };
+
+  const InfoRow = function(props) {
+    if (!props.value) return null;
+    return (
+      <div className="row mt-4">
+        <span style={{ fontSize: 14, minWidth: 22 }}>{props.icon}</span>
+        <div><div className="text-xs text-muted">{props.label}</div><div className="text-sm" style={{ lineHeight: 1.5 }}>{props.value}</div></div>
+      </div>
+    );
+  };
+
+  const hasStructured = jobNotes || schedule || houseNotes || person.accessNotes;
+
+  return (
+    <div style={{ paddingBottom: 24 }}>
+      {!pasteMode ? (
+        <div>
+          <div className="btn-row mt-12">
+            <button className="btn btn-primary" onClick={function() { setPasteMode(true); }}>+ Add from Notes</button>
+          </div>
+
+          {hasStructured && (
+            <div>
+              <div className="section-label">Job Details</div>
+              <div className="card">
+                <InfoRow icon="🔑" label="Access" value={person.accessNotes} />
+                <InfoRow icon="📋" label="Job notes" value={jobNotes} />
+                <InfoRow icon="🗓️" label="Schedule" value={schedule} />
+                <InfoRow icon="🏡" label="House notes" value={houseNotes} />
+              </div>
+            </div>
+          )}
+
+          {profileNotes.length > 0 && (
+            <div>
+              <div className="section-label">Raw Notes</div>
+              {profileNotes.map(function(note) {
+                return (
+                  <div key={note.id} className="card card-sm">
+                    <div className="text-xs text-muted mb-4">{fmtDate(note.date)} · {note.source === "add_client" ? "Initial entry" : "Added manually"}</div>
+                    <div className="text-sm" style={{ lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{note.text.length > 300 ? note.text.slice(0, 300) + "..." : note.text}</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {!hasStructured && profileNotes.length === 0 && (
+            <div className="empty-state"><div className="icon">📝</div><h3>No notes yet</h3><p>Paste a meet and greet summary or any notes to build up the record</p></div>
+          )}
+        </div>
+      ) : (
+        <div style={{ padding: "12px 16px 24px" }}>
+          <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 6 }}>Paste your notes</div>
+          <div className="page-sub mb-12">Meet and greet summary, Gemini notes, anything — the AI will extract and update the record.</div>
+          <textarea className="input" rows={10} value={pasteText} onChange={function(e) { setPasteText(e.target.value); }} placeholder={"Paste notes here...\n\nE.g. Tanga is a Fox Red Lab, very gentle. Feed at 6pm, 1.5 cups kibble. Use short lead on roads. Vet: Stable Close 01962 841001..."} autoFocus />
+          <div className="btn-row mt-12" style={{ padding: 0 }}>
+            <button className="btn btn-ghost" onClick={function() { setPasteMode(false); setPasteText(""); }}>Cancel</button>
+            <button className="btn btn-primary" disabled={!pasteText.trim() || loading} onClick={addFromPaste}>
+              {loading ? <Spinner /> : "Extract and Save →"}
+            </button>
+          </div>
+        </div>
+      )}
+      {toast && <div className="toast">{toast}</div>}
+    </div>
+  );
+}
+
+/* PERSON DETAIL — three tabs */
 function PersonDetail({ personId, onBack, onUpdate }) {
-  const [view, setView] = useState("profile");
+  const [activeTab, setActiveTab] = useState("profile");
   const [selectedDog, setSelectedDog] = useState(null);
   const [selectedCat, setSelectedCat] = useState(null);
   const [showMoveStage, setShowMoveStage] = useState(false);
+  const [showMessage, setShowMessage] = useState(false);
   const [tick, setTick] = useState(0);
 
   const person = db.getAll("people").find(function(p) { return p.id === personId; });
@@ -1089,9 +1418,9 @@ function PersonDetail({ personId, onBack, onUpdate }) {
     onBack();
   };
 
-  if (view === "message") return <MessagingFlow person={person} onBack={function() { setView("profile"); refresh(); }} onPersonUpdated={refresh} />;
-  if (view === "add_dog" || selectedDog) return <DogWizard personId={personId} existingDog={selectedDog} onSave={function() { setSelectedDog(null); setView("profile"); refresh(); }} onBack={function() { setSelectedDog(null); setView("profile"); }} />;
-  if (view === "add_cat" || selectedCat) return <CatWizard personId={personId} existingCat={selectedCat} onSave={function() { setSelectedCat(null); setView("profile"); refresh(); }} onBack={function() { setSelectedCat(null); setView("profile"); }} />;
+  if (showMessage) return <MessagingFlow person={person} onBack={function() { setShowMessage(false); refresh(); }} onPersonUpdated={refresh} />;
+  if (selectedDog) return <DogWizard personId={personId} existingDog={selectedDog} onSave={function() { setSelectedDog(null); refresh(); }} onBack={function() { setSelectedDog(null); }} />;
+  if (selectedCat) return <CatWizard personId={personId} existingCat={selectedCat} onSave={function() { setSelectedCat(null); refresh(); }} onBack={function() { setSelectedCat(null); }} />;
 
   return (
     <div key={tick}>
@@ -1120,7 +1449,7 @@ function PersonDetail({ personId, onBack, onUpdate }) {
       </div>
 
       <div className="btn-row">
-        <button className="btn btn-primary btn-sm" onClick={function() { setView("message"); }}>💬 Message</button>
+        <button className="btn btn-primary btn-sm" onClick={function() { setShowMessage(true); }}>💬 Message</button>
         <button className="btn btn-ghost btn-sm" onClick={function() { setShowMoveStage(true); }}>Stage</button>
         {person.stage !== "active" && <button className="btn btn-green btn-sm" onClick={function() { moveStage("active"); }}>Active ✓</button>}
       </div>
@@ -1129,95 +1458,95 @@ function PersonDetail({ personId, onBack, onUpdate }) {
         <button className="btn btn-ghost btn-sm" style={{ color: "var(--red)", borderColor: "rgba(214,48,49,0.3)" }} onClick={deletePerson}>Delete</button>
       </div>
 
-      <div className="section-label">Contact</div>
-      <div className="card">
-        {[["📞", person.phone], ["🏠", person.address || (person.extracted && person.extracted.location)], ["📮", person.postcode], ["📱", person.platform], ["💷", person.rate ? "£" + person.rate + " per walk" : null]].filter(function(row) { return row[1]; }).map(function(row, i) {
-          return <div key={i} className="row mt-4"><span style={{ fontSize: 14, minWidth: 20 }}>{row[0]}</span><span className="text-sm">{row[1]}</span></div>;
+      {/* Three tabs */}
+      <div className="pill-tabs mt-4 mb-4">
+        {[["profile","Profile"],["notes","Notes"],["messages","Messages"]].map(function(t) {
+          return <button key={t[0]} className={"pill-tab" + (activeTab === t[0] ? " active" : "")} onClick={function() { setActiveTab(t[0]); }}>{t[1]}</button>;
         })}
-        {person.notes && <div className="text-sm text-muted mt-8">{person.notes}</div>}
       </div>
 
-      {person.extracted && Object.values(person.extracted).some(function(v) { return v && v !== "null"; }) && (
+      {/* PROFILE TAB */}
+      {activeTab === "profile" && (
         <div>
-          <div className="section-label">From Messages</div>
+          <div className="section-label">Owner</div>
           <div className="card">
-            {Object.entries(FIELD_LABELS).map(function(entry) {
-              const field = entry[0]; const meta = entry[1];
-              const val = person.extracted[field];
-              if (!val || val === "null") return null;
-              return <div key={field} className="row mt-4"><span style={{ fontSize: 14, minWidth: 20 }}>{meta.icon}</span><div><div className="text-xs text-muted">{meta.label}</div><div className="text-sm">{val}</div></div></div>;
+            {[["📞", person.phone], ["🏠", person.address || (person.extracted && person.extracted.location)], ["📮", person.postcode], ["📱", person.platform], ["💷", person.rate ? "£" + person.rate + " per walk" : null], ["🔑", person.accessNotes]].filter(function(row) { return row[1]; }).map(function(row, i) {
+              return <div key={i} className="row mt-4"><span style={{ fontSize: 14, minWidth: 22 }}>{row[0]}</span><span className="text-sm">{row[1]}</span></div>;
             })}
+            {person.notes && <div className="text-sm text-muted mt-8">{person.notes}</div>}
           </div>
-        </div>
-      )}
 
-      {dogs.length > 0 && (
-        <div>
-          <div className="section-label">Dogs</div>
           {dogs.map(function(dog) {
+            const fields = [["🐾","Breed",dog.breed],["🎂","Age",dog.age],["📏","Size",dog.size === "S" ? "Small" : dog.size === "M" ? "Medium" : dog.size === "L" ? "Large" : dog.size],["🐶","With other dogs",dog.goodWithDogs],["🦮","On lead",dog.goodOnLead],["💊","Health",dog.healthIssues === "Yes" ? dog.healthNotes : null],["😨","Spooks",dog.spooks],["💪","Personality",dog.personality],["🏥","Vet",dog.vet],["📞","Vet phone",dog.vetPhone]].filter(function(f) { return f[2]; });
             return (
-              <div key={dog.id} className="card card-tap" onClick={function() { setSelectedDog(dog); }}>
-                <div className="row-between">
-                  <div>
-                    <div style={{ fontWeight: 600 }}>🐕 {dog.name}</div>
-                    <div className="text-sm text-muted">{dog.breed} · {dog.age}</div>
-                    <div className="row mt-4" style={{ gap: 6 }}>
-                      {dog.size && <span className="badge badge-muted">{dog.size === "S" ? "Small" : dog.size === "M" ? "Medium" : "Large"}</span>}
-                      {dog.goodWithDogs && <span className={"badge " + (dog.goodWithDogs === "Yes" ? "badge-green" : dog.goodWithDogs === "No" ? "badge-orange" : "badge-yellow")}>{dog.goodWithDogs} with dogs</span>}
-                    </div>
-                  </div>
-                  <span className="text-muted">›</span>
+              <div key={dog.id}>
+                <div className="section-label" style={{ cursor: "pointer" }} onClick={function() { setSelectedDog(dog); }}>🐕 {dog.name.toUpperCase()} <span style={{ fontSize: 10, color: "var(--purple)", marginLeft: 4 }}>edit ›</span></div>
+                <div className="card">
+                  {fields.length === 0 ? <div className="text-sm text-muted" style={{ fontStyle: "italic" }}>Tap section label to edit</div> : fields.map(function(f, i) {
+                    return <div key={i} className="row mt-4"><span style={{ fontSize: 14, minWidth: 22 }}>{f[0]}</span><div><div className="text-xs text-muted">{f[1]}</div><div className="text-sm">{f[2]}</div></div></div>;
+                  })}
+                  {dog.meetGreetResult && <div className="mt-8"><span className={"badge " + (dog.meetGreetResult === "Great" ? "badge-green" : dog.meetGreetResult === "Fine" ? "badge-purple" : "badge-orange")}>Meet: {dog.meetGreetResult}</span></div>}
                 </div>
               </div>
             );
           })}
-        </div>
-      )}
 
-      {cats.length > 0 && (
-        <div>
-          <div className="section-label">Cats</div>
           {cats.map(function(cat) {
+            const fields = [["🎂","Age",cat.age],["🏠","Indoor/Outdoor",cat.indoorOutdoor],["🍽️","Feeding",cat.feedingRoutine],["🪣","Litter",cat.litterNotes],["💊","Medication",cat.medication === "Yes" ? cat.medicationNotes : null],["💪","Personality",cat.personality]].filter(function(f) { return f[2]; });
             return (
-              <div key={cat.id} className="card card-tap" onClick={function() { setSelectedCat(cat); }}>
-                <div className="row-between"><div><div style={{ fontWeight: 600 }}>🐱 {cat.name}</div><div className="text-sm text-muted">{cat.age} · {cat.indoorOutdoor}</div></div><span className="text-muted">›</span></div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      <div className="btn-row mt-4">
-        <button className="btn btn-ghost btn-sm" onClick={function() { setView("add_dog"); }}>+ Add Dog</button>
-        <button className="btn btn-ghost btn-sm" onClick={function() { setView("add_cat"); }}>+ Add Cat</button>
-      </div>
-
-      {visits.length > 0 && (
-        <div>
-          <div className="section-label">Visits</div>
-          {visits.map(function(v) {
-            const svc = SERVICE_MAP[v.serviceType];
-            return (
-              <div key={v.id} className="card card-sm">
-                <div className="row-between">
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: 14 }}>{v.isMeetGreet ? "🤝 Meet and Greet" : ((svc && svc.icon) || "") + " " + ((svc && svc.label) || v.serviceType)}</div>
-                    <div className="text-xs text-muted">{fmtDate(v.date)}{v.time ? " · " + v.time : ""}{v.duration ? " · " + v.duration : ""}</div>
-                  </div>
-                  <div className="row">
-                    {v.amount && <span className="text-sm text-muted">{"£" + v.amount}</span>}
-                    <div className={"check-box" + (v.paid ? " done" : "")} style={{ width: 22, height: 22, borderRadius: 6 }} onClick={function() { togglePaid(v.id); }}>
-                      {v.paid && <span style={{ color: "#001a12", fontSize: 11, fontWeight: 800 }}>✓</span>}
-                    </div>
-                  </div>
+              <div key={cat.id}>
+                <div className="section-label" style={{ cursor: "pointer" }} onClick={function() { setSelectedCat(cat); }}>🐱 {cat.name.toUpperCase()} <span style={{ fontSize: 10, color: "var(--purple)", marginLeft: 4 }}>edit ›</span></div>
+                <div className="card">
+                  {fields.length === 0 ? <div className="text-sm text-muted" style={{ fontStyle: "italic" }}>Tap section label to edit</div> : fields.map(function(f, i) {
+                    return <div key={i} className="row mt-4"><span style={{ fontSize: 14, minWidth: 22 }}>{f[0]}</span><div><div className="text-xs text-muted">{f[1]}</div><div className="text-sm">{f[2]}</div></div></div>;
+                  })}
                 </div>
               </div>
             );
           })}
+
+          <div className="btn-row mt-4">
+            <button className="btn btn-ghost btn-sm" onClick={function() { setSelectedDog({ id: uid(), personId, name: "", breed: "", age: "", size: "", goodWithDogs: "", goodOnLead: "", healthIssues: "No", healthNotes: "", spooks: "", vet: "", vetPhone: "", personality: "", meetGreetResult: "" }); }}>+ Add Dog</button>
+            <button className="btn btn-ghost btn-sm" onClick={function() { setSelectedCat({ id: uid(), personId: personId, name: "", age: "", indoorOutdoor: "", feedingRoutine: "", litterNotes: "", medication: "No", medicationNotes: "", personality: "" }); }}>+ Add Cat</button>
+          </div>
+
+          {visits.length > 0 && (
+            <div>
+              <div className="section-label">Visits</div>
+              {visits.map(function(v) {
+                const svc = SERVICE_MAP[v.serviceType];
+                return (
+                  <div key={v.id} className="card card-sm">
+                    <div className="row-between">
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: 14 }}>{v.isMeetGreet ? "🤝 Meet and Greet" : ((svc && svc.icon) || "") + " " + ((svc && svc.label) || v.serviceType)}</div>
+                        <div className="text-xs text-muted">{fmtDate(v.date)}{v.time ? " · " + v.time : ""}{v.duration ? " · " + v.duration : ""}</div>
+                      </div>
+                      <div className="row">
+                        {v.amount && <span className="text-sm text-muted">{"£" + v.amount}</span>}
+                        <div className={"check-box" + (v.paid ? " done" : "")} style={{ width: 22, height: 22, borderRadius: 6 }} onClick={function() { togglePaid(v.id); }}>
+                          {v.paid && <span style={{ color: "#001a12", fontSize: 11, fontWeight: 800 }}>✓</span>}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <div style={{ height: 24 }} />
         </div>
       )}
 
-      <div style={{ height: 32 }} />
+      {/* NOTES TAB */}
+      {activeTab === "notes" && <NotesTab person={person} onUpdate={refresh} />}
+
+      {/* MESSAGES TAB */}
+      {activeTab === "messages" && (
+        <div>
+          <MessagingFlow person={person} onBack={function() { setActiveTab("profile"); }} onPersonUpdated={refresh} />
+        </div>
+      )}
     </div>
   );
 }
@@ -1257,7 +1586,7 @@ function TabToday({ onOpenPerson }) {
         <div className="text-sm text-muted mt-4">{new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}</div>
       </div>
 
-      <div className="section-label">WALKS TODAY</div>
+      <div className="section-label">VISITS AND WALKS TODAY</div>
       {todayVisits.length === 0 ? (
         <div style={{ padding: "8px 16px 4px" }}><div className="text-sm text-muted">No walks booked today 🌿</div></div>
       ) : todayVisits.map(function(v) {
@@ -1298,7 +1627,7 @@ function TabToday({ onOpenPerson }) {
                     <span style={{ fontWeight: 600, fontSize: 13 }}>{action.label}</span>
                   </div>
                   {!done && p && (
-                    <button className="btn btn-primary btn-xs" style={{ marginLeft: 8, flexShrink: 0 }} onClick={function() { onOpenPerson(p.id); }}>💬</button>
+                    <button className="btn btn-primary btn-sm" style={{ marginLeft: 8, flexShrink: 0 }} onClick={function() { onOpenPerson(p.id); }}>💬 Reply</button>
                   )}
                 </div>
                 <div className="mt-4"><StagePill stageId={action.stage} /></div>
@@ -1334,8 +1663,8 @@ function TabToday({ onOpenPerson }) {
   );
 }
 
-/* TAB: PEOPLE */
-function TabPeople({ onOpenPerson, onNewEnquiry }) {
+/* TAB: CUSTOMERS */
+function TabCustomers({ onOpenPerson, onNewEnquiry, onAddClient }) {
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
   const STAGE_ORDER = { new_enquiry: 0, replied: 1, interested: 2, meet_arranged: 3, met: 4, active: 5, gone_quiet: 6, not_proceeding: 7 };
@@ -1360,12 +1689,13 @@ function TabPeople({ onOpenPerson, onNewEnquiry }) {
   return (
     <div>
       <div style={{ padding: "14px 16px 8px" }}>
-        <div className="row-between">
-          <div className="page-title">People</div>
-          <button className="btn btn-primary btn-sm" onClick={onNewEnquiry}>+ New</button>
-        </div>
+        <div className="page-title">Customers</div>
       </div>
-      <div style={{ padding: "6px 16px 10px" }}>
+      <div className="btn-row mt-4">
+        <button className="btn btn-primary btn-sm" onClick={onNewEnquiry}>💬 New Message</button>
+        <button className="btn btn-ghost btn-sm" onClick={onAddClient}>+ Add Client</button>
+      </div>
+      <div style={{ padding: "4px 16px 10px" }}>
         <input className="input" placeholder="Search..." value={search} onChange={function(e) { setSearch(e.target.value); }} />
       </div>
       <div className="pill-tabs mb-12">
@@ -1374,7 +1704,7 @@ function TabPeople({ onOpenPerson, onNewEnquiry }) {
         })}
       </div>
       {filtered.length === 0 ? (
-        <div className="empty-state"><div className="icon">🐾</div><h3>Nobody here yet</h3><p>Tap + New to add someone</p></div>
+        <div className="empty-state"><div className="icon">🐾</div><h3>Nobody here yet</h3><p>Tap New Message or Add Client to get started</p></div>
       ) : filtered.map(function(p) {
         const dogs = db.getAll("dogs").filter(function(d) { return d.personId === p.id; });
         const cats = db.getAll("cats").filter(function(c) { return c.personId === p.id; });
@@ -1526,16 +1856,17 @@ function TabPrices() {
 
 /* ROOT APP */
 const TABS = [
-  { id: "today",    label: "Today",    icon: "🏠" },
-  { id: "people",   label: "People",   icon: "🐾" },
-  { id: "schedule", label: "Schedule", icon: "📅" },
-  { id: "prices",   label: "Prices",   icon: "💷" },
+  { id: "today",     label: "Today",     icon: "🏠" },
+  { id: "customers", label: "Customers", icon: "🐾" },
+  { id: "schedule",  label: "Schedule",  icon: "📅" },
+  { id: "prices",    label: "Prices",    icon: "💷" },
 ];
 
 export default function App() {
   const [tab, setTab] = useState("today");
   const [openPersonId, setOpenPersonId] = useState(null);
   const [showNewEnquiry, setShowNewEnquiry] = useState(false);
+  const [showAddClient, setShowAddClient] = useState(false);
   const [tick, setTick] = useState(0);
   const refresh = useCallback(function() { setTick(function(t) { return t + 1; }); }, []);
 
@@ -1544,6 +1875,15 @@ export default function App() {
       <style>{CSS}</style>
       <div className="app-shell"><div className="tab-content">
         <MessagingFlow person={null} onBack={function() { setShowNewEnquiry(false); refresh(); }} onPersonUpdated={refresh} />
+      </div></div>
+    </>
+  );
+
+  if (showAddClient) return (
+    <>
+      <style>{CSS}</style>
+      <div className="app-shell"><div className="tab-content">
+        <AddClient onSave={function(personId) { setShowAddClient(false); setOpenPersonId(personId); refresh(); }} onBack={function() { setShowAddClient(false); }} />
       </div></div>
     </>
   );
@@ -1562,10 +1902,10 @@ export default function App() {
       <style>{CSS}</style>
       <div className="app-shell">
         <div className="tab-content">
-          {tab === "today"    && <TabToday    key={tick} onOpenPerson={setOpenPersonId} />}
-          {tab === "people"   && <TabPeople   key={tick} onOpenPerson={setOpenPersonId} onNewEnquiry={function() { setShowNewEnquiry(true); }} />}
-          {tab === "schedule" && <TabSchedule key={tick} onOpenPerson={setOpenPersonId} />}
-          {tab === "prices"   && <TabPrices   key={tick} />}
+          {tab === "today"     && <TabToday     key={tick} onOpenPerson={setOpenPersonId} />}
+          {tab === "customers" && <TabCustomers key={tick} onOpenPerson={setOpenPersonId} onNewEnquiry={function() { setShowNewEnquiry(true); }} onAddClient={function() { setShowAddClient(true); }} />}
+          {tab === "schedule"  && <TabSchedule  key={tick} onOpenPerson={setOpenPersonId} />}
+          {tab === "prices"    && <TabPrices    key={tick} />}
         </div>
         <nav className="bottom-nav">
           {TABS.map(function(t) {
