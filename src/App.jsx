@@ -677,6 +677,13 @@ function MessagingFlow({ person, onBack, onPersonUpdated, onEditMsg, onDeleteMsg
   if (screen === "thread") {
     const msgs = (currentPerson && currentPerson.messages) || [];
     const allExt = (currentPerson && currentPerson.extracted) || {};
+    // Merge direct person fields into extracted so both tabs show the same info
+    const merged = Object.assign({}, allExt, {
+      client_name: (currentPerson && currentPerson.name) || allExt.client_name,
+      location: (currentPerson && (currentPerson.address || currentPerson.accessNotes)) || allExt.location,
+      rate: (currentPerson && currentPerson.rate ? "£" + currentPerson.rate + " per walk" : null) || allExt.rate,
+      notes: [currentPerson && currentPerson.houseNotes, currentPerson && currentPerson.jobNotes, allExt.notes].filter(Boolean).join(" · ") || null,
+    });
     return (
       <div className="fade-up">
         <BackBtn onBack={onBack} />
@@ -685,7 +692,7 @@ function MessagingFlow({ person, onBack, onPersonUpdated, onEditMsg, onDeleteMsg
           <div className="card" style={{ marginLeft: 0, marginRight: 0 }}>
             {Object.entries(FIELD_LABELS).map(function(entry) {
               const field = entry[0]; const meta = entry[1];
-              const val = allExt[field];
+              const val = merged[field];
               const has = val && val !== "null" && val !== "";
               if (editingField === field) {
                 return (
@@ -1561,6 +1568,9 @@ function PersonDetail({ personId, onBack, onUpdate }) {
   const [editingMsgVal, setEditingMsgVal] = useState("");
   const [showBookingForm, setShowBookingForm] = useState(false);
   const [bookingData, setBookingData] = useState({ date: "", time: "", serviceType: "dog_walk", duration: "30 min", isMeet: false });
+  const [datePasteText, setDatePasteText] = useState("");
+  const [datePasteLoading, setDatePasteLoading] = useState(false);
+  const [parsedDates, setParsedDates] = useState(null); // null | array of {date, time, selected}
 
   const person = db.getAll("people").find(function(p) { return p.id === personId; });
   const dogs = db.getAll("dogs").filter(function(d) { return d.personId === personId; });
@@ -1615,7 +1625,33 @@ function PersonDetail({ personId, onBack, onUpdate }) {
     refresh();
   };
 
-  // Edit/delete messages
+  // AI date paste parse
+  const parseDatePaste = async function() {
+    if (!datePasteText.trim()) return;
+    setDatePasteLoading(true);
+    try {
+      const today = new Date();
+      const prompt = "Extract all dates and times from this message. Today is " + today.toDateString() + ".\n\nMessage: \"" + datePasteText + "\"\n\nReturn ONLY valid JSON:\n{\"dates\":[{\"date\":\"YYYY-MM-DD\",\"time\":\"HH:MM or empty string\",\"label\":\"friendly label e.g. Mon 14 July at 10:30am\"}]}\n\nRules:\n- Use next upcoming occurrence for day names (e.g. next Tuesday from today)\n- If multiple times for same date, create one entry per time\n- If year not specified use " + today.getFullYear() + "\n- Return empty array if nothing found";
+      const result = await callClaudeJSON(prompt);
+      const dates = (result.dates || []).filter(function(d) { return d.date; }).map(function(d) { return Object.assign({}, d, { selected: true }); });
+      setParsedDates(dates);
+    } catch { setParsedDates([]); }
+    setDatePasteLoading(false);
+  };
+
+  const saveAllParsedDates = function(isMeet) {
+    if (!parsedDates) return;
+    const selected = parsedDates.filter(function(d) { return d.selected && d.date; });
+    for (const d of selected) {
+      db.upsert("visits", { id: uid(), personId, serviceType: bookingData.serviceType || "dog_walk", date: d.date, time: d.time || "", duration: bookingData.duration || "30 min", status: "confirmed", isMeetGreet: isMeet, paid: false, amount: "" });
+    }
+    if (selected.length > 0) {
+      const all = db.getAll("people"); const idx = all.findIndex(function(p) { return p.id === personId; });
+      if (idx >= 0) { all[idx].stage = isMeet ? "meet_arranged" : "active"; all[idx].lastActionDate = nowStr(); db.set("people", all); }
+    }
+    setParsedDates(null); setDatePasteText("");
+    refresh();
+  };
   const saveMessageEdit = function(idx) {
     const all = db.getAll("people");
     const pi = all.findIndex(function(p) { return p.id === personId; });
@@ -1763,9 +1799,56 @@ function PersonDetail({ personId, onBack, onUpdate }) {
       {/* ── BOOKINGS TAB */}
       {activeTab === "bookings" && (
         <div>
+          {/* AI date paste */}
+          <div className="section-label">PASTE A MESSAGE WITH DATES</div>
+          <div className="card">
+            <div className="text-sm text-muted mb-8">Drop in any message or note with dates — the AI will pull them out for you.</div>
+            {!parsedDates ? (
+              <div>
+                <textarea className="input" rows={4} value={datePasteText} onChange={function(e) { setDatePasteText(e.target.value); }} placeholder={"e.g. \"How about Monday 14th at 10am and Wednesday 16th at 2pm?\""} />
+                <button className="btn btn-primary mt-8" disabled={!datePasteText.trim() || datePasteLoading} onClick={parseDatePaste}>
+                  {datePasteLoading ? <Spinner /> : "Extract Dates →"}
+                </button>
+              </div>
+            ) : parsedDates.length === 0 ? (
+              <div>
+                <div className="text-sm text-muted mb-8">No dates found in that message. Try adding them manually below.</div>
+                <button className="btn btn-ghost btn-sm" onClick={function() { setParsedDates(null); setDatePasteText(""); }}>Try again</button>
+              </div>
+            ) : (
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10, color: "var(--green)" }}>{"Found " + parsedDates.length + " date" + (parsedDates.length !== 1 ? "s" : "") + " — tap to deselect any you don't want:"}</div>
+                {parsedDates.map(function(d, i) {
+                  return (
+                    <div key={i} className="card card-tap card-sm" style={{ margin: "0 0 6px", opacity: d.selected ? 1 : 0.4 }} onClick={function() { setParsedDates(function(prev) { return prev.map(function(x, j) { return j === i ? Object.assign({}, x, { selected: !x.selected }) : x; }); }); }}>
+                      <div className="row-between">
+                        <div><div style={{ fontWeight: 600, fontSize: 13 }}>{d.label || d.date}</div>{d.time && <div className="text-xs text-muted">{d.time}</div>}</div>
+                        <span style={{ fontSize: 16 }}>{d.selected ? "✅" : "⬜"}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+                <div className="input-group mt-10">
+                  <div className="input-label">Service</div>
+                  <div className="chip-row">{SERVICES.map(function(s) { return <Chip key={s.id} label={s.icon + " " + s.label} active={bookingData.serviceType === s.id} onClick={function() { setBookingData(function(b) { return Object.assign({}, b, { serviceType: s.id }); }); }} />; })}</div>
+                </div>
+                <div className="input-group">
+                  <div className="input-label">Duration</div>
+                  <div className="chip-row">{["30 min","45 min","60 min"].map(function(d) { return <Chip key={d} label={d} active={bookingData.duration === d} onClick={function() { setBookingData(function(b) { return Object.assign({}, b, { duration: d }); }); }} />; })}</div>
+                </div>
+                <div className="btn-row mt-4" style={{ padding: 0 }}>
+                  <button className="btn btn-ghost" onClick={function() { setParsedDates(null); setDatePasteText(""); }}>Start over</button>
+                  <button className="btn btn-ghost btn-sm" style={{ color: "var(--blue)", borderColor: "rgba(9,132,227,0.3)" }} disabled={!parsedDates.some(function(d) { return d.selected; })} onClick={function() { saveAllParsedDates(true); }}>🤝 Save as Meet</button>
+                  <button className="btn btn-green" disabled={!parsedDates.some(function(d) { return d.selected; })} onClick={function() { saveAllParsedDates(false); }}>{"Add " + parsedDates.filter(function(d) { return d.selected; }).length + " booking" + (parsedDates.filter(function(d) { return d.selected; }).length !== 1 ? "s" : "") + " ✓"}</button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Manual form */}
           <div className="btn-row mt-4">
-            <button className="btn btn-primary btn-sm" onClick={function() { setBookingData(function(b) { return Object.assign({}, b, { isMeet: false }); }); setShowBookingForm(true); }}>+ Add Booking</button>
-            <button className="btn btn-ghost btn-sm" onClick={function() { setBookingData(function(b) { return Object.assign({}, b, { isMeet: true, serviceType: "dog_walk" }); }); setShowBookingForm(true); }}>+ Meet and Greet</button>
+            <button className="btn btn-primary btn-sm" onClick={function() { setBookingData(function(b) { return Object.assign({}, b, { isMeet: false }); }); setShowBookingForm(function(v) { return !v; }); }}>+ Add Manually</button>
+            <button className="btn btn-ghost btn-sm" onClick={function() { setBookingData(function(b) { return Object.assign({}, b, { isMeet: true, serviceType: "dog_walk" }); }); setShowBookingForm(function(v) { return !v; }); }}>+ Meet and Greet</button>
           </div>
 
           {showBookingForm && (
@@ -1792,8 +1875,8 @@ function PersonDetail({ personId, onBack, onUpdate }) {
             </div>
           )}
 
-          {visits.length === 0 && !showBookingForm && (
-            <div className="empty-state"><div className="icon">📅</div><h3>No bookings yet</h3><p>Tap + Add Booking or + Meet and Greet to add one</p></div>
+          {visits.length === 0 && !showBookingForm && !parsedDates && (
+            <div className="empty-state" style={{ paddingTop: 24 }}><div className="icon">📅</div><h3>No bookings yet</h3></div>
           )}
 
           {visits.map(function(v) {
