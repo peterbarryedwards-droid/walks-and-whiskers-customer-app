@@ -577,24 +577,42 @@ function MessagingFlow({ person, onBack, onPersonUpdated, onEditMsg, onDeleteMsg
     if (!rawMessage.trim()) return;
     setScreen("analysing");
     const isExisting = enquiryType && enquiryType.id === "existing_client";
-    const prompt = "You are helping Freddie, a pet care professional, analyse an enquiry on " + platform + ".\n" +
-      "Enquiry type: " + (enquiryType && enquiryType.label) + "\nMessage: \"\"\"" + rawMessage + "\"\"\"\n\n" +
-      "Extract all visible info. Identify what is genuinely missing.\n" +
-      "For the service field: read the message carefully to detect what service is needed.\n" +
-      "Use: dog_walk (dog walking), cat_visit (cat sitting or visiting), dog_drop_in (dog drop-in visit), home_sit (home sitting with dogs), stay_over (overnight stay).\n" +
-      "If they mention a cat, cat sitting, or cat visit — service must be cat_visit.\n" +
-      "If they mention dog walking — service is dog_walk.\n" +
-      "If they mention sitting overnight or home sitting — service is home_sit.\n" +
+
+    // Build what we already know about this client
+    const knownParts = [];
+    if (currentPerson) {
+      if (currentPerson.name) knownParts.push("Owner name: " + currentPerson.name);
+      if (currentPerson.phone) knownParts.push("Phone: " + currentPerson.phone);
+      if (currentPerson.address) knownParts.push("Address: " + currentPerson.address);
+      if (currentPerson.postcode) knownParts.push("Postcode: " + currentPerson.postcode);
+      if (currentPerson.serviceType) knownParts.push("Service: " + currentPerson.serviceType);
+      if (currentPerson.rate) knownParts.push("Rate: " + currentPerson.rate);
+      if (currentPerson.accessNotes) knownParts.push("Access: " + currentPerson.accessNotes);
+      const ext = currentPerson.extracted || {};
+      if (ext.location && !currentPerson.address) knownParts.push("Location: " + ext.location);
+      if (ext.dog_name) knownParts.push("Pet: " + ext.dog_name);
+      if (ext.dates) knownParts.push("Previous dates: " + ext.dates);
+      // Pet names from dogs/cats
+      const dogs = db.getAll("dogs").filter(function(d) { return d.personId === currentPerson.id; });
+      const cats = db.getAll("cats").filter(function(c) { return c.personId === currentPerson.id; });
+      const petNames = dogs.map(function(d) { return d.name; }).concat(cats.map(function(c) { return c.name; })).filter(Boolean);
+      if (petNames.length > 0) knownParts.push("Pet name(s): " + petNames.join(", "));
+    }
+    const knownContext = knownParts.length > 0 ? "\n\nAlready known about this client (DO NOT ask about these):\n" + knownParts.join("\n") : "";
+
+    const prompt = "You are helping Freddie, a pet care professional, analyse a message on " + platform + ".\n" +
+      "Enquiry type: " + (enquiryType && enquiryType.label) + "\nMessage: \"\"\"" + rawMessage + "\"\"\"" + knownContext + "\n\n" +
+      "Extract any NEW info from this message. Only ask questions about fields that are genuinely unknown.\n" +
+      "For the service field: dog_walk, cat_visit, dog_drop_in, home_sit, stay_over.\n" +
+      "If they mention a cat — service must be cat_visit.\n" +
       "Reply with ONLY valid JSON:\n" +
       "{\"extracted\":{\"client_name\":null,\"dog_name\":null,\"service\":null,\"dates\":null,\"location\":null,\"rate\":null,\"recurring\":null,\"notes\":null}," +
       "\"questions\":[{\"field\":\"field_name\",\"question\":\"friendly question\",\"hint\":\"short hint\",\"required\":true}]}\n" +
-      "Rules:\n- Only ask about genuinely missing fields\n" +
-      "- dog_name field covers ALL pets — if cat service, ask for cat name and label it as cat name\n" +
-      "- if service is cat-related, all pet references should say 'cat' not 'dog'\n" +
-      "- dog_name: if missing hint is Check the " + platform + " profile or type skip, required false\n" +
-      "- location: if missing required true\n" +
-      "- rate: ONLY ask if platform is Direct or Other, NEVER for Rover or Bark\n" +
-      (isExisting ? "- Existing client — minimal questions\n" : "") +
+      "Rules:\n- NEVER ask about fields already in the 'Already known' section above\n" +
+      "- Only ask about genuinely missing fields not covered by existing knowledge\n" +
+      "- dog_name covers all pets — label correctly for cats\n" +
+      "- rate: ONLY if platform is Direct or Other, NEVER for Rover or Bark\n" +
+      (isExisting ? "- Existing client — ask as few questions as possible\n" : "") +
       "- questions can be empty []";
     try {
       const result = await callClaudeJSON(prompt);
@@ -2387,57 +2405,153 @@ function TabCustomers({ onOpenPerson, onNewEnquiry, onAddClient }) {
 
 /* TAB: SCHEDULE */
 function TabSchedule({ onOpenPerson }) {
+  const [viewMode, setViewMode] = useState("list"); // list | week
   const visits = db.getAll("visits").filter(function(v) { return v.status !== "cancelled"; }).sort(function(a, b) { const dc = a.date.localeCompare(b.date); return dc !== 0 ? dc : (a.time || "").localeCompare(b.time || ""); });
   const people = db.getAll("people");
-  const grouped = {};
-  visits.forEach(function(v) { if (!grouped[v.date]) grouped[v.date] = []; grouped[v.date].push(v); });
   const today = todayStr();
-  const upcoming = Object.keys(grouped).filter(function(d) { return d >= today; }).sort();
-  const past = Object.keys(grouped).filter(function(d) { return d < today; }).sort().reverse().slice(0, 7);
 
-  const renderDay = function(dateStr, isPast) {
-    const d = new Date(dateStr + "T12:00:00");
-    const isToday = dateStr === today;
+  // Week view: show current week Mon-Sun
+  const getWeekStart = function(offset) {
+    const d = new Date();
+    const day = d.getDay(); // 0=Sun
+    const diff = day === 0 ? -6 : 1 - day; // Monday
+    d.setDate(d.getDate() + diff + offset * 7);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  };
+  const [weekOffset, setWeekOffset] = useState(0);
+  const weekStart = getWeekStart(weekOffset);
+  const weekDays = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(weekStart);
+    d.setDate(d.getDate() + i);
+    weekDays.push(d.toISOString().split("T")[0]);
+  }
+  const weekLabel = weekOffset === 0 ? "This week" : weekOffset === 1 ? "Next week" : weekOffset === -1 ? "Last week" : weekStart.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
+
+  const renderVisitCard = function(v, isPast) {
+    const p = people.find(function(x) { return x.id === v.personId; });
+    const dogs = db.getAll("dogs").filter(function(d) { return d.personId === v.personId; });
+    const cats = db.getAll("cats").filter(function(c) { return c.personId === v.personId; });
+    const petNames = dogs.map(function(d) { return d.name; }).concat(cats.map(function(c) { return c.name; })).filter(Boolean).join(", ");
+    const svc = SERVICE_MAP[v.serviceType];
     return (
-      <div key={dateStr}>
-        <div className="section-label" style={{ color: isToday ? "var(--green)" : undefined }}>
-          {isToday ? "TODAY · " : ""}{d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short" })}
-        </div>
-        {grouped[dateStr].map(function(v) {
-          const p = people.find(function(x) { return x.id === v.personId; });
-          const dogs = db.getAll("dogs").filter(function(d) { return d.personId === v.personId; });
-          const svc = SERVICE_MAP[v.serviceType];
-          return (
-            <div key={v.id} className="card card-tap card-sm" style={{ opacity: isPast || v.status === "completed" ? 0.5 : 1 }} onClick={function() { if (p) onOpenPerson(p.id); }}>
-              <div className="row-between">
-                <div>
-                  <div className="row" style={{ gap: 6 }}>
-                    <span style={{ fontWeight: 700, fontSize: 14 }}>{v.time || "—"}</span>
-                    <span style={{ fontWeight: 600, fontSize: 14 }}>{v.isMeetGreet ? "🤝 Meet and Greet" : ((svc && svc.icon) || "") + " " + (dogs.map(function(d) { return d.name; }).join(", ") || (p && p.name) || "—")}</span>
-                  </div>
-                  <div className="text-xs text-muted mt-2">{v.isMeetGreet ? "Meet and greet" : ((svc && svc.label) || "")}{v.duration ? " · " + v.duration : ""}</div>
-                  {p && <div className="text-xs text-muted">{((p.address || (p.extracted && p.extracted.location)) || "").split(",")[0]}</div>}
-                </div>
-                {v.status === "completed" && <span className="badge badge-green">Done</span>}
-                {v.isMeetGreet && v.status !== "completed" && <span className="badge badge-yellow">Meet</span>}
-              </div>
+      <div key={v.id} className="card card-tap card-sm" style={{ opacity: isPast || v.status === "completed" ? 0.5 : 1 }} onClick={function() { if (p) onOpenPerson(p.id); }}>
+        <div className="row-between">
+          <div>
+            <div className="row" style={{ gap: 6 }}>
+              <span style={{ fontWeight: 700, fontSize: 14 }}>{v.time || "—"}</span>
+              <span style={{ fontWeight: 600, fontSize: 14 }}>{v.isMeetGreet ? "🤝 Meet and Greet" : ((svc && svc.icon) || "") + " " + (petNames || (p && p.name) || "—")}</span>
             </div>
-          );
-        })}
+            <div className="text-xs text-muted mt-2">{p && p.name}{petNames && p ? " · " : ""}{petNames}{v.duration ? " · " + v.duration : ""}</div>
+          </div>
+          <div>
+            {v.status === "completed" && <span className="badge badge-green">Done</span>}
+            {v.isMeetGreet && v.status !== "completed" && <span className="badge badge-yellow">Meet</span>}
+          </div>
+        </div>
       </div>
     );
   };
 
+  const grouped = {};
+  visits.forEach(function(v) { if (!grouped[v.date]) grouped[v.date] = []; grouped[v.date].push(v); });
+  const upcoming = Object.keys(grouped).filter(function(d) { return d >= today; }).sort();
+  const past = Object.keys(grouped).filter(function(d) { return d < today; }).sort().reverse().slice(0, 7);
+
   return (
     <div>
       <div style={{ padding: "14px 16px 8px" }}>
-        <div className="page-title">Schedule</div>
-        <div className="page-sub">All upcoming confirmed visits</div>
+        <div className="row-between">
+          <div><div className="page-title">Schedule</div></div>
+          <div className="row" style={{ gap: 6 }}>
+            <button className={"btn btn-sm " + (viewMode === "list" ? "btn-primary" : "btn-ghost")} onClick={function() { setViewMode("list"); }}>List</button>
+            <button className={"btn btn-sm " + (viewMode === "week" ? "btn-primary" : "btn-ghost")} onClick={function() { setViewMode("week"); }}>Week</button>
+          </div>
+        </div>
       </div>
-      {upcoming.length === 0 && <div className="empty-state"><div className="icon">📅</div><h3>Nothing booked yet</h3><p>Visits appear here once confirmed through messaging</p></div>}
-      {upcoming.map(function(d) { return renderDay(d, false); })}
-      {past.length > 0 && past.map(function(d) { return renderDay(d, true); })}
-      <div style={{ height: 16 }} />
+
+      {/* ── LIST VIEW */}
+      {viewMode === "list" && (
+        <div>
+          {upcoming.length === 0 && <div className="empty-state"><div className="icon">📅</div><h3>Nothing booked yet</h3><p>Add visits from a client's Bookings tab</p></div>}
+          {upcoming.map(function(dateStr) {
+            const d = new Date(dateStr + "T12:00:00");
+            const isToday = dateStr === today;
+            return (
+              <div key={dateStr}>
+                <div className="section-label" style={{ color: isToday ? "var(--green)" : undefined }}>
+                  {isToday ? "TODAY · " : ""}{d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "short" })}
+                </div>
+                {grouped[dateStr].map(function(v) { return renderVisitCard(v, false); })}
+              </div>
+            );
+          })}
+          {past.length > 0 && (
+            <div>
+              <div className="section-label" style={{ marginTop: 24 }}>RECENT</div>
+              {past.map(function(dateStr) {
+                const d = new Date(dateStr + "T12:00:00");
+                return (
+                  <div key={dateStr}>
+                    <div className="section-label" style={{ fontSize: 11, opacity: 0.6 }}>{d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}</div>
+                    {grouped[dateStr].map(function(v) { return renderVisitCard(v, true); })}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── WEEK VIEW */}
+      {viewMode === "week" && (
+        <div>
+          <div className="row" style={{ padding: "4px 16px 12px", gap: 8, alignItems: "center" }}>
+            <button className="btn btn-ghost btn-sm" style={{ width: "auto", padding: "6px 12px" }} onClick={function() { setWeekOffset(function(o) { return o - 1; }); }}>‹</button>
+            <div style={{ flex: 1, textAlign: "center", fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, letterSpacing: 1, color: weekOffset === 0 ? "var(--green)" : "var(--text)" }}>{weekLabel.toUpperCase()}</div>
+            <button className="btn btn-ghost btn-sm" style={{ width: "auto", padding: "6px 12px" }} onClick={function() { setWeekOffset(function(o) { return o + 1; }); }}>›</button>
+          </div>
+          {weekDays.map(function(dateStr) {
+            const d = new Date(dateStr + "T12:00:00");
+            const isToday = dateStr === today;
+            const dayVisits = grouped[dateStr] || [];
+            const isPast = dateStr < today;
+            return (
+              <div key={dateStr} style={{ marginBottom: 4 }}>
+                <div style={{ padding: "6px 16px 2px", display: "flex", alignItems: "center", gap: 10 }}>
+                  <div style={{ width: 38, textAlign: "center", flexShrink: 0 }}>
+                    <div style={{ fontSize: 11, color: isToday ? "var(--green)" : "var(--muted)", fontWeight: 700, textTransform: "uppercase" }}>{d.toLocaleDateString("en-GB", { weekday: "short" })}</div>
+                    <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, lineHeight: 1, color: isToday ? "var(--green)" : isPast ? "var(--muted2)" : "var(--text)" }}>{d.getDate()}</div>
+                  </div>
+                  <div style={{ flex: 1, borderTop: "1px solid var(--border)", paddingTop: 4 }}>
+                    {dayVisits.length === 0 ? (
+                      <div className="text-xs text-muted" style={{ padding: "4px 0" }}>Nothing booked</div>
+                    ) : (
+                      dayVisits.map(function(v) {
+                        const p = people.find(function(x) { return x.id === v.personId; });
+                        const dogs = db.getAll("dogs").filter(function(d) { return d.personId === v.personId; });
+                        const cats = db.getAll("cats").filter(function(c) { return c.personId === v.personId; });
+                        const petNames = dogs.map(function(d) { return d.name; }).concat(cats.map(function(c) { return c.name; })).filter(Boolean).join(", ");
+                        const svc = SERVICE_MAP[v.serviceType];
+                        return (
+                          <div key={v.id} style={{ padding: "5px 8px", background: v.isMeetGreet ? "rgba(253,203,110,0.1)" : isPast ? "var(--bg)" : "rgba(108,92,231,0.08)", borderRadius: 8, marginBottom: 4, cursor: "pointer", opacity: isPast || v.status === "completed" ? 0.55 : 1 }} onClick={function() { if (p) onOpenPerson(p.id); }}>
+                            <div style={{ fontWeight: 600, fontSize: 13 }}>
+                              {v.time ? v.time + " · " : ""}{v.isMeetGreet ? "🤝 Meet" : ((svc && svc.icon) || "") + " " + (petNames || (p && p.name) || "—")}
+                            </div>
+                            {p && <div className="text-xs text-muted">{p.name}{v.duration ? " · " + v.duration : ""}</div>}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <div style={{ height: 24 }} />
     </div>
   );
 }
@@ -2467,7 +2581,7 @@ function TabPrices() {
         const service = entry[0]; const items = entry[1];
         return (
           <div key={service}>
-            <div className="section-label">{service.toUpperCase()}</div>
+            <div className="section-label" style={{ fontSize: 15, letterSpacing: 1 }}>{service.toUpperCase()}</div>
             {items.map(function(p) {
               return (
                 <div key={p.id} className="card card-tap" onClick={function() { if (editing !== p.id) startEdit(p); }}>
