@@ -179,15 +179,15 @@ const TONE = "Tone: warm and professional but concise. No small talk, no referen
 
 const PROMPTS = {
   new_client: (platform, prices, service) => {
-    const isCat = service && service.toLowerCase().includes("cat");
-    const petType = isCat ? "cat" : "dog";
+    const isCat = service && (service.toLowerCase().includes("cat"));
     const isDirect = platform === "Direct" || platform === "Other";
     return "You help Freddie, a pet care professional in Winchester, reply to a new client enquiry.\n" +
-      (isDirect ? "Freddie rates:\n" + prices + "\n" : "Platform is " + platform + " — NEVER mention rates, the platform sets them.\n") +
+      (isDirect ? "Freddie's full price list:\n" + prices + "\nMention the rate relevant to the service they have asked about.\n" : "Platform is " + platform + " — NEVER mention rates, the platform sets them.\n") +
       TONE + "\n" +
       "Reply structure: 1) thank them briefly 2) if location unknown ask for it 3) if dates unknown ask 4) " +
-      (isDirect ? "mention the relevant rate for their " + petType + " service clearly" : "do not mention rate") +
-      " 5) suggest a short meet and greet — write it naturally 6) close warmly.\n" +
+      (isDirect ? "state the relevant rate clearly" : "do not mention rate") +
+      " 5) suggest a short meet and greet naturally — this ALWAYS comes before any booking 6) close warmly.\n" +
+      "IMPORTANT: Do NOT confirm any booking. The next step is always a meet and greet first.\n" +
       "Sign off as Freddie. British English.\n" +
       "Format with exactly:\nDRAFT REPLY\nQUESTIONS TO ASK";
   },
@@ -197,7 +197,7 @@ const PROMPTS = {
   quote: (platform, prices) => {
     const isDirect = platform === "Direct" || platform === "Other";
     return "You help Freddie respond to a price enquiry.\n" +
-      (isDirect ? "Freddie rates:\n" + prices + "\nState the relevant rates clearly and confidently. Do not apologise for the price.\n" : "Platform is " + platform + " — NEVER mention rates, the platform sets them.\n") +
+      (isDirect ? "Freddie's full price list:\n" + prices + "\nState the relevant rates clearly and confidently. Do not apologise for the price.\n" : "Platform is " + platform + " — NEVER mention rates, the platform sets them.\n") +
       TONE + "\nSign off as Freddie. British English.\nFormat with exactly:\nDRAFT REPLY\nWHAT TO MENTION";
   },
 
@@ -398,6 +398,8 @@ function MessagingFlow({ person, onBack, onPersonUpdated }) {
   const [tweaking, setTweaking] = useState(false);
   const [followUpMsg, setFollowUpMsg] = useState("");
   const [manualMsg, setManualMsg] = useState("");
+  const [ownReplyText, setOwnReplyText] = useState("");
+  const [showOwnReply, setShowOwnReply] = useState(false);
   const [toast, setToast] = useState(null);
   const [intent, setIntent] = useState(null);
   const [bookingForm, setBookingForm] = useState(null);
@@ -416,6 +418,19 @@ function MessagingFlow({ person, onBack, onPersonUpdated }) {
     savePerson({ messages: msgs.concat([freddieMsg]), lastActionDate: nowStr(), stage: currentPerson.stage === "new_enquiry" ? "replied" : currentPerson.stage });
     setManualMsg("");
     showToast("Reply logged ✓");
+  };
+
+  const saveOwnReply = (finalAnswers) => {
+    if (!ownReplyText.trim()) return;
+    const allData = Object.assign({}, extracted, finalAnswers || {});
+    const msgs = (currentPerson && currentPerson.messages) || [];
+    const clientMsg = { role: "client", text: rawMessage, date: nowStr() };
+    const freddieMsg = { role: "freddie", manual: ownReplyText.trim(), draft: ownReplyText.trim(), date: nowStr() };
+    const name = allData.client_name && allData.client_name !== "null" ? allData.client_name : (currentPerson && currentPerson.name) || "Unknown";
+    savePerson({ name, platform, stage: "replied", lastActionDate: nowStr(), extracted: allData, messages: msgs.concat([clientMsg, freddieMsg]), serviceType: allData.service || (currentPerson && currentPerson.serviceType), address: allData.location || (currentPerson && currentPerson.address) });
+    setOwnReplyText(""); setShowOwnReply(false);
+    setScreen("thread");
+    showToast("Message logged ✓");
   };
 
   const savePerson = (updates) => {
@@ -552,7 +567,13 @@ function MessagingFlow({ person, onBack, onPersonUpdated }) {
     else if (et === "confirm") systemPrompt = PROMPTS.confirm();
     else systemPrompt = PROMPTS.decline();
     const prompt = systemPrompt + "\n\nPlatform: " + platform + "\nOriginal message: " + rawMessage + (history ? "\n\nConversation so far:\n" + history : "") + "\n\nKnown information:\n" + (context || "(none)");
-    const intentPrompt = "Read this client message and return JSON only:\nMessage: \"" + rawMessage + "\"\nConversation: \"" + history + "\"\nReturn: {\"suggested_stage\":\"new_enquiry|replied|interested|meet_arranged|met|active|gone_quiet\",\"booking_detected\":true or false,\"meet_detected\":true or false,\"booking_summary\":\"brief summary or null\"}";
+    const curStage = (currentPerson && currentPerson.stage) || "new_enquiry";
+    const isNewEnquiry = curStage === "new_enquiry" || !currentPerson;
+    const intentPrompt = "Read this client message and return JSON only:\nMessage: \"" + rawMessage + "\"\nConversation: \"" + history + "\"\nCurrent stage: " + curStage + "\n" +
+      "Return: {\"suggested_stage\":\"new_enquiry|replied|interested|meet_arranged|met|active|gone_quiet\",\"booking_detected\":" +
+      (isNewEnquiry ? "false" : "true or false") +
+      ",\"meet_detected\":true or false,\"booking_summary\":\"brief summary or null\"}\n" +
+      "IMPORTANT: If this is a new or initial enquiry, booking_detected must be false — a meet and greet always comes first. Only set booking_detected to true if dates have been explicitly confirmed after a meet has taken place.";
     try {
       const [raw, intentResult] = await Promise.all([callClaude(prompt, 1000), callClaudeJSON(intentPrompt)]);
       const parsed = parseSections(raw);
@@ -578,7 +599,13 @@ function MessagingFlow({ person, onBack, onPersonUpdated }) {
     const history = msgs.map(function(m) { return (m.role === "client" ? "Client" : "Freddie") + ": " + (m.text || m.draft || m.manual); }).join("\n\n");
     const known = Object.entries(currentPerson.extracted || {}).filter(function(e) { return e[1] && e[1] !== "null"; }).map(function(e) { return e[0] + ": " + e[1]; }).join("\n");
     const prompt = "You help Freddie, a dog walker, reply to a follow-up message.\nConversation:\n" + history + "\nClient latest message: \"" + followUpMsg + "\"\nKnown:\n" + (known || "(not much yet)") + "\nWarm, natural reply. Don't re-introduce. Sign off as Freddie. British English.\nFormat with:\nDRAFT REPLY\nONE TIP";
-    const intentPrompt = "Read this client message and return JSON only:\nMessage: \"" + followUpMsg + "\"\nConversation: \"" + history + "\"\nReturn: {\"suggested_stage\":\"new_enquiry|replied|interested|meet_arranged|met|active|gone_quiet\",\"booking_detected\":true or false,\"meet_detected\":true or false,\"booking_summary\":\"brief summary or null\"}";
+    const followUpStage = currentPerson.stage || "replied";
+    const followUpIsEarly = followUpStage === "new_enquiry" || followUpStage === "replied" || followUpStage === "interested";
+    const intentPrompt = "Read this client message and return JSON only:\nMessage: \"" + followUpMsg + "\"\nConversation: \"" + history + "\"\nCurrent stage: " + followUpStage + "\n" +
+      "Return: {\"suggested_stage\":\"new_enquiry|replied|interested|meet_arranged|met|active|gone_quiet\",\"booking_detected\":" +
+      (followUpIsEarly ? "false" : "true or false") +
+      ",\"meet_detected\":true or false,\"booking_summary\":\"brief summary or null\"}\n" +
+      "IMPORTANT: Only set booking_detected to true if a meet and greet has already happened and dates are being explicitly confirmed. At early stages, meet_detected is more likely than booking_detected.";
     try {
       const [raw, intentResult] = await Promise.all([callClaude(prompt, 1000), callClaudeJSON(intentPrompt)]);
       const parsed = parseSections(raw);
@@ -850,6 +877,22 @@ function MessagingFlow({ person, onBack, onPersonUpdated }) {
           <button className="btn btn-primary" style={{ background: typeColor }} onClick={function() { if (dynamicQs.length > 0) setScreen("questions"); else generateReply({}); }}>
             {dynamicQs.length > 0 ? ("Answer " + dynamicQs.length + " question" + (dynamicQs.length !== 1 ? "s" : "") + " →") : "Generate Reply ✨"}
           </button>
+
+          {!showOwnReply ? (
+            <button className="btn btn-ghost mt-8" onClick={function() { setShowOwnReply(true); }}>
+              I already sent my own reply
+            </button>
+          ) : (
+            <div style={{ marginTop: 12, background: "rgba(108,92,231,0.06)", border: "1px solid rgba(108,92,231,0.2)", borderRadius: "var(--radius-sm)", padding: "12px" }}>
+              <div style={{ fontSize: 12, color: "var(--purple)", fontWeight: 700, marginBottom: 8 }}>LOG YOUR OWN REPLY</div>
+              <div className="text-sm text-muted mb-8">Paste what you sent — I will save the client info and log it to the thread.</div>
+              <textarea className="input" rows={4} value={ownReplyText} onChange={function(e) { setOwnReplyText(e.target.value); }} placeholder="Paste the message you sent..." autoFocus />
+              <div className="btn-row mt-8" style={{ padding: 0 }}>
+                <button className="btn btn-ghost" onClick={function() { setShowOwnReply(false); setOwnReplyText(""); }}>Cancel</button>
+                <button className="btn btn-primary" disabled={!ownReplyText.trim()} style={{ opacity: ownReplyText.trim() ? 1 : 0.4 }} onClick={function() { saveOwnReply({}); }}>Save and Done</button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -881,6 +924,22 @@ function MessagingFlow({ person, onBack, onPersonUpdated }) {
             </button>
           </div>
           <div className="text-xs text-muted mt-8" style={{ textAlign: "center" }}>Press Enter to continue</div>
+
+          {!showOwnReply ? (
+            <button className="btn btn-ghost mt-12" onClick={function() { setShowOwnReply(true); }}>
+              I already sent my own reply
+            </button>
+          ) : (
+            <div style={{ marginTop: 12, background: "rgba(108,92,231,0.06)", border: "1px solid rgba(108,92,231,0.2)", borderRadius: "var(--radius-sm)", padding: "12px" }}>
+              <div style={{ fontSize: 12, color: "var(--purple)", fontWeight: 700, marginBottom: 8 }}>LOG YOUR OWN REPLY</div>
+              <div className="text-sm text-muted mb-8">Paste what you sent — I will save everything and log it to the thread.</div>
+              <textarea className="input" rows={4} value={ownReplyText} onChange={function(e) { setOwnReplyText(e.target.value); }} placeholder="Paste the message you sent..." />
+              <div className="btn-row mt-8" style={{ padding: 0 }}>
+                <button className="btn btn-ghost" onClick={function() { setShowOwnReply(false); setOwnReplyText(""); }}>Cancel</button>
+                <button className="btn btn-primary" disabled={!ownReplyText.trim()} style={{ opacity: ownReplyText.trim() ? 1 : 0.4 }} onClick={function() { saveOwnReply(qAnswers); }}>Save and Done</button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     );
