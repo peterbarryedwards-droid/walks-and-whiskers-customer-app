@@ -416,6 +416,8 @@ function MessagingFlow({ person, onBack, onPersonUpdated, onEditMsg, onDeleteMsg
   const [draftText, setDraftText] = useState("");
   const [tweakInput, setTweakInput] = useState("");
   const [tweaking, setTweaking] = useState(false);
+  const [editMsgIdx, setEditMsgIdx] = useState(null);
+  const [editMsgVal, setEditMsgVal] = useState("");
   const [followUpMsg, setFollowUpMsg] = useState("");
   const [manualMsg, setManualMsg] = useState("");
   const [ownReplyText, setOwnReplyText] = useState("");
@@ -431,8 +433,34 @@ function MessagingFlow({ person, onBack, onPersonUpdated, onEditMsg, onDeleteMsg
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
   const typeColor = (enquiryType && enquiryType.color) || "#6c5ce7";
 
+  const saveMessageEdit = (idx) => {
+    if (!currentPerson) return;
+    const all = db.getAll("people");
+    const pi = all.findIndex(function(p) { return p.id === currentPerson.id; });
+    if (pi >= 0 && all[pi].messages && all[pi].messages[idx]) {
+      const msg = all[pi].messages[idx];
+      if (msg.role === "client") msg.text = editMsgVal;
+      else { msg.draft = editMsgVal; msg.manual = editMsgVal; }
+      db.set("people", all);
+      setCurrentPerson(Object.assign({}, all[pi]));
+    }
+    setEditMsgIdx(null);
+    if (onPersonUpdated) onPersonUpdated();
+  };
+
+  const deleteMessage = (idx) => {
+    if (!currentPerson || !window.confirm("Delete this message?")) return;
+    const all = db.getAll("people");
+    const pi = all.findIndex(function(p) { return p.id === currentPerson.id; });
+    if (pi >= 0 && all[pi].messages) {
+      all[pi].messages.splice(idx, 1);
+      db.set("people", all);
+      setCurrentPerson(Object.assign({}, all[pi]));
+    }
+    if (onPersonUpdated) onPersonUpdated();
+  };
+
   const logManualReply = () => {
-    if (!manualMsg.trim() || !currentPerson) return;
     const freddieMsg = { role: "freddie", manual: manualMsg.trim(), draft: manualMsg.trim(), date: nowStr() };
     const msgs = (currentPerson.messages || []);
     savePerson({ messages: msgs.concat([freddieMsg]), lastActionDate: nowStr(), stage: currentPerson.stage === "new_enquiry" ? "replied" : currentPerson.stage });
@@ -725,32 +753,32 @@ function MessagingFlow({ person, onBack, onPersonUpdated, onEditMsg, onDeleteMsg
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 {msgs.map(function(msg, i) {
                   const isManual = msg.manual;
-                  const isEditingThis = editingMsgIdx === i;
+                  const isEditingThis = editMsgIdx === i;
                   const msgText = msg.draft || msg.text || msg.manual || "";
                   return (
                     <div key={i}>
                       <div style={{ fontSize: 11, color: "var(--muted2)", marginBottom: 5, textAlign: msg.role === "freddie" ? "right" : "left", display: "flex", justifyContent: msg.role === "freddie" ? "flex-end" : "flex-start", alignItems: "center", gap: 8 }}>
                         {msg.role === "client" && (
                           <div style={{ display: "flex", gap: 4 }}>
-                            <button style={{ background: "none", border: "none", color: "var(--muted2)", cursor: "pointer", fontSize: 11 }} onClick={function() { if (onEditMsg) onEditMsg(i, msg.text || ""); }}>✏️</button>
-                            <button style={{ background: "none", border: "none", color: "var(--red)", cursor: "pointer", fontSize: 11, opacity: 0.6 }} onClick={function() { if (onDeleteMsg) onDeleteMsg(i); }}>✕</button>
+                            <button style={{ background: "none", border: "none", color: "var(--muted2)", cursor: "pointer", fontSize: 11 }} onClick={function() { setEditMsgIdx(i); setEditMsgVal(msg.text || ""); }}>✏️</button>
+                            <button style={{ background: "none", border: "none", color: "var(--red)", cursor: "pointer", fontSize: 11, opacity: 0.6 }} onClick={function() { deleteMessage(i); }}>✕</button>
                           </div>
                         )}
                         <span>{msg.role === "client" ? ((currentPerson && currentPerson.name) || "Client") : "Freddie"} · {fmtDate(msg.date)}{isManual ? " · logged" : ""}</span>
                         {msg.role === "freddie" && (
                           <div style={{ display: "flex", gap: 4 }}>
-                            <button style={{ background: "none", border: "none", color: "var(--muted2)", cursor: "pointer", fontSize: 11 }} onClick={function() { if (onEditMsg) onEditMsg(i, msg.draft || msg.text || msg.manual || ""); }}>✏️</button>
-                            <button style={{ background: "none", border: "none", color: "var(--red)", cursor: "pointer", fontSize: 11, opacity: 0.6 }} onClick={function() { if (onDeleteMsg) onDeleteMsg(i); }}>✕</button>
+                            <button style={{ background: "none", border: "none", color: "var(--muted2)", cursor: "pointer", fontSize: 11 }} onClick={function() { setEditMsgIdx(i); setEditMsgVal(msg.draft || msg.text || msg.manual || ""); }}>✏️</button>
+                            <button style={{ background: "none", border: "none", color: "var(--red)", cursor: "pointer", fontSize: 11, opacity: 0.6 }} onClick={function() { deleteMessage(i); }}>✕</button>
                           </div>
                         )}
                       </div>
 
                       {isEditingThis ? (
                         <div>
-                          <textarea className="input" rows={4} value={editingMsgVal} onChange={function(e) { if (onEditMsgChange) onEditMsgChange(e.target.value); }} style={{ fontSize: 13 }} />
+                          <textarea className="input" rows={4} value={editMsgVal} onChange={function(e) { setEditMsgVal(e.target.value); }} style={{ fontSize: 13 }} autoFocus />
                           <div className="btn-row mt-4" style={{ padding: 0 }}>
-                            <button className="btn btn-ghost btn-sm" onClick={function() { if (onCancelMsgEdit) onCancelMsgEdit(); }}>Cancel</button>
-                            <button className="btn btn-green btn-sm" onClick={function() { if (onSaveMsgEdit) onSaveMsgEdit(i); }}>Save ✓</button>
+                            <button className="btn btn-ghost btn-sm" onClick={function() { setEditMsgIdx(null); }}>Cancel</button>
+                            <button className="btn btn-green btn-sm" onClick={function() { saveMessageEdit(i); }}>Save ✓</button>
                           </div>
                         </div>
                       ) : msg.role === "client" ? (
@@ -1626,14 +1654,16 @@ function PersonDetail({ personId, onBack, onUpdate }) {
   };
 
   // AI date paste parse
-  const parseDatePaste = async function() {
+  const parseDatePaste = async function(isMeet) {
     if (!datePasteText.trim()) return;
     setDatePasteLoading(true);
+    setBookingData(function(b) { return Object.assign({}, b, { isMeet: isMeet }); });
     try {
       const today = new Date();
       const prompt = "Extract all dates and times from this message. Today is " + today.toDateString() + ".\n\nMessage: \"" + datePasteText + "\"\n\nReturn ONLY valid JSON:\n{\"dates\":[{\"date\":\"YYYY-MM-DD\",\"time\":\"HH:MM or empty string\",\"label\":\"friendly label e.g. Mon 14 July at 10:30am\"}]}\n\nRules:\n- Use next upcoming occurrence for day names (e.g. next Tuesday from today)\n- If multiple times for same date, create one entry per time\n- If year not specified use " + today.getFullYear() + "\n- Return empty array if nothing found";
       const result = await callClaudeJSON(prompt);
       const dates = (result.dates || []).filter(function(d) { return d.date; }).map(function(d) { return Object.assign({}, d, { selected: true }); });
+      dates._isMeet = isMeet;
       setParsedDates(dates);
     } catch { setParsedDates([]); }
     setDatePasteLoading(false);
@@ -1799,75 +1829,69 @@ function PersonDetail({ personId, onBack, onUpdate }) {
       {/* ── BOOKINGS TAB */}
       {activeTab === "bookings" && (
         <div>
-          {/* AI date paste */}
-          <div className="section-label">PASTE A MESSAGE WITH DATES</div>
+          {/* ── ADD BOOKING section */}
+          <div className="section-label">ADD BOOKING</div>
           <div className="card">
-            <div className="text-sm text-muted mb-8">Drop in any message or note with dates — the AI will pull them out for you.</div>
-            {!parsedDates ? (
+            <div className="text-sm text-muted mb-8">Paste a message with dates and times — the AI will pull them out.</div>
+            {parsedDates === null || (parsedDates && parsedDates._isMeet) ? (
               <div>
-                <textarea className="input" rows={4} value={datePasteText} onChange={function(e) { setDatePasteText(e.target.value); }} placeholder={"e.g. \"How about Monday 14th at 10am and Wednesday 16th at 2pm?\""} />
-                <button className="btn btn-primary mt-8" disabled={!datePasteText.trim() || datePasteLoading} onClick={parseDatePaste}>
-                  {datePasteLoading ? <Spinner /> : "Extract Dates →"}
-                </button>
-              </div>
-            ) : parsedDates.length === 0 ? (
-              <div>
-                <div className="text-sm text-muted mb-8">No dates found in that message. Try adding them manually below.</div>
-                <button className="btn btn-ghost btn-sm" onClick={function() { setParsedDates(null); setDatePasteText(""); }}>Try again</button>
+                <textarea className="input" rows={3} value={datePasteText} onChange={function(e) { setDatePasteText(e.target.value); }} placeholder={"e.g. How about Tuesday 15th at 10am and Thursday 17th at 2pm?"} />
+                <div className="btn-row mt-8" style={{ padding: 0 }}>
+                  <button className="btn btn-ghost btn-sm" onClick={function() { setShowBookingForm(function(v) { return !v; }); setBookingData(function(b) { return Object.assign({}, b, { isMeet: false }); }); }}>Enter manually</button>
+                  <button className="btn btn-primary" disabled={!datePasteText.trim() || datePasteLoading} onClick={function() { parseDatePaste(false); }}>
+                    {datePasteLoading && !bookingData.isMeet ? <Spinner /> : "Extract Dates →"}
+                  </button>
+                </div>
               </div>
             ) : (
               <div>
-                <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10, color: "var(--green)" }}>{"Found " + parsedDates.length + " date" + (parsedDates.length !== 1 ? "s" : "") + " — tap to deselect any you don't want:"}</div>
-                {parsedDates.map(function(d, i) {
-                  return (
-                    <div key={i} className="card card-tap card-sm" style={{ margin: "0 0 6px", opacity: d.selected ? 1 : 0.4 }} onClick={function() { setParsedDates(function(prev) { return prev.map(function(x, j) { return j === i ? Object.assign({}, x, { selected: !x.selected }) : x; }); }); }}>
-                      <div className="row-between">
-                        <div><div style={{ fontWeight: 600, fontSize: 13 }}>{d.label || d.date}</div>{d.time && <div className="text-xs text-muted">{d.time}</div>}</div>
-                        <span style={{ fontSize: 16 }}>{d.selected ? "✅" : "⬜"}</span>
-                      </div>
+                {parsedDates.length === 0 ? (
+                  <div>
+                    <div className="text-sm text-muted mb-8">No dates found. Add manually or try again.</div>
+                    <button className="btn btn-ghost btn-sm" onClick={function() { setParsedDates(null); setDatePasteText(""); }}>Try again</button>
+                  </div>
+                ) : (
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10, color: "var(--green)" }}>{"Found " + parsedDates.length + " date" + (parsedDates.length !== 1 ? "s" : "") + " — deselect any you don't want:"}</div>
+                    {parsedDates.map(function(d, i) {
+                      return (
+                        <div key={i} className="card card-tap card-sm" style={{ margin: "0 0 6px", opacity: d.selected ? 1 : 0.4 }} onClick={function() { setParsedDates(function(prev) { return prev.map(function(x, j) { return j === i ? Object.assign({}, x, { selected: !x.selected }) : x; }); }); }}>
+                          <div className="row-between"><div><div style={{ fontWeight: 600, fontSize: 13 }}>{d.label || d.date}</div>{d.time && <div className="text-xs text-muted">{d.time}</div>}</div><span style={{ fontSize: 16 }}>{d.selected ? "✅" : "⬜"}</span></div>
+                        </div>
+                      );
+                    })}
+                    <div className="input-group mt-10">
+                      <div className="input-label">Service</div>
+                      <div className="chip-row">{SERVICES.map(function(s) { return <Chip key={s.id} label={s.icon + " " + s.label} active={bookingData.serviceType === s.id} onClick={function() { setBookingData(function(b) { return Object.assign({}, b, { serviceType: s.id }); }); }} />; })}</div>
                     </div>
-                  );
-                })}
-                <div className="input-group mt-10">
-                  <div className="input-label">Service</div>
-                  <div className="chip-row">{SERVICES.map(function(s) { return <Chip key={s.id} label={s.icon + " " + s.label} active={bookingData.serviceType === s.id} onClick={function() { setBookingData(function(b) { return Object.assign({}, b, { serviceType: s.id }); }); }} />; })}</div>
-                </div>
-                <div className="input-group">
-                  <div className="input-label">Duration</div>
-                  <div className="chip-row">{["30 min","45 min","60 min"].map(function(d) { return <Chip key={d} label={d} active={bookingData.duration === d} onClick={function() { setBookingData(function(b) { return Object.assign({}, b, { duration: d }); }); }} />; })}</div>
-                </div>
-                <div className="btn-row mt-4" style={{ padding: 0 }}>
-                  <button className="btn btn-ghost" onClick={function() { setParsedDates(null); setDatePasteText(""); }}>Start over</button>
-                  <button className="btn btn-ghost btn-sm" style={{ color: "var(--blue)", borderColor: "rgba(9,132,227,0.3)" }} disabled={!parsedDates.some(function(d) { return d.selected; })} onClick={function() { saveAllParsedDates(true); }}>🤝 Save as Meet</button>
-                  <button className="btn btn-green" disabled={!parsedDates.some(function(d) { return d.selected; })} onClick={function() { saveAllParsedDates(false); }}>{"Add " + parsedDates.filter(function(d) { return d.selected; }).length + " booking" + (parsedDates.filter(function(d) { return d.selected; }).length !== 1 ? "s" : "") + " ✓"}</button>
-                </div>
+                    <div className="input-group">
+                      <div className="input-label">Duration</div>
+                      <div className="chip-row">{["30 min","45 min","60 min"].map(function(dur) { return <Chip key={dur} label={dur} active={bookingData.duration === dur} onClick={function() { setBookingData(function(b) { return Object.assign({}, b, { duration: dur }); }); }} />; })}</div>
+                    </div>
+                    <div className="btn-row mt-4" style={{ padding: 0 }}>
+                      <button className="btn btn-ghost" onClick={function() { setParsedDates(null); setDatePasteText(""); }}>Start over</button>
+                      <button className="btn btn-green" disabled={!parsedDates.some(function(d) { return d.selected; })} onClick={function() { saveAllParsedDates(false); }}>{"Add " + parsedDates.filter(function(d) { return d.selected; }).length + " booking" + (parsedDates.filter(function(d) { return d.selected; }).length !== 1 ? "s" : "") + " ✓"}</button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
 
-          {/* Manual form */}
-          <div className="btn-row mt-4">
-            <button className="btn btn-primary btn-sm" onClick={function() { setBookingData(function(b) { return Object.assign({}, b, { isMeet: false }); }); setShowBookingForm(function(v) { return !v; }); }}>+ Add Manually</button>
-            <button className="btn btn-ghost btn-sm" onClick={function() { setBookingData(function(b) { return Object.assign({}, b, { isMeet: true, serviceType: "dog_walk" }); }); setShowBookingForm(function(v) { return !v; }); }}>+ Meet and Greet</button>
-          </div>
-
-          {showBookingForm && (
+          {/* Manual booking form */}
+          {showBookingForm && !bookingData.isMeet && (
             <div className="card" style={{ marginTop: 4 }}>
-              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12 }}>{bookingData.isMeet ? "📅 Meet and Greet" : "📅 New Booking"}</div>
+              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12 }}>📅 New Booking</div>
               <div className="input-group"><div className="input-label">Date</div><input className="input" type="date" value={bookingData.date} onChange={function(e) { setBookingData(function(b) { return Object.assign({}, b, { date: e.target.value }); }); }} /></div>
               <div className="input-group"><div className="input-label">Time</div><input className="input" type="time" value={bookingData.time} onChange={function(e) { setBookingData(function(b) { return Object.assign({}, b, { time: e.target.value }); }); }} /></div>
-              {!bookingData.isMeet && (
-                <div>
-                  <div className="input-group">
-                    <div className="input-label">Service</div>
-                    <div className="chip-row">{SERVICES.map(function(s) { return <Chip key={s.id} label={s.icon + " " + s.label} active={bookingData.serviceType === s.id} onClick={function() { setBookingData(function(b) { return Object.assign({}, b, { serviceType: s.id }); }); }} />; })}</div>
-                  </div>
-                  <div className="input-group">
-                    <div className="input-label">Duration</div>
-                    <div className="chip-row">{["30 min","45 min","60 min"].map(function(d) { return <Chip key={d} label={d} active={bookingData.duration === d} onClick={function() { setBookingData(function(b) { return Object.assign({}, b, { duration: d }); }); }} />; })}</div>
-                  </div>
-                </div>
-              )}
+              <div className="input-group">
+                <div className="input-label">Service</div>
+                <div className="chip-row">{SERVICES.map(function(s) { return <Chip key={s.id} label={s.icon + " " + s.label} active={bookingData.serviceType === s.id} onClick={function() { setBookingData(function(b) { return Object.assign({}, b, { serviceType: s.id }); }); }} />; })}</div>
+              </div>
+              <div className="input-group">
+                <div className="input-label">Duration</div>
+                <div className="chip-row">{["30 min","45 min","60 min"].map(function(dur) { return <Chip key={dur} label={dur} active={bookingData.duration === dur} onClick={function() { setBookingData(function(b) { return Object.assign({}, b, { duration: dur }); }); }} />; })}</div>
+              </div>
               <div className="btn-row mt-8" style={{ padding: 0 }}>
                 <button className="btn btn-ghost" onClick={function() { setShowBookingForm(false); }}>Cancel</button>
                 <button className="btn btn-green" disabled={!bookingData.date} onClick={saveBooking}>Save ✓</button>
@@ -1875,17 +1899,69 @@ function PersonDetail({ personId, onBack, onUpdate }) {
             </div>
           )}
 
-          {visits.length === 0 && !showBookingForm && !parsedDates && (
-            <div className="empty-state" style={{ paddingTop: 24 }}><div className="icon">📅</div><h3>No bookings yet</h3></div>
+          {/* ── ADD MEET & GREET section */}
+          <div className="section-label" style={{ marginTop: 24 }}>ADD MEET AND GREET</div>
+          <div className="card">
+            <div className="text-sm text-muted mb-8">Paste a message to extract the date, or add it manually.</div>
+            {parsedDates === null || !(parsedDates && parsedDates._isMeet) ? (
+              <div>
+                <textarea className="input" rows={3} value={datePasteText} onChange={function(e) { setDatePasteText(e.target.value); }} placeholder={"e.g. Are you free Monday 12th at 11am for a quick meet?"} />
+                <div className="btn-row mt-8" style={{ padding: 0 }}>
+                  <button className="btn btn-ghost btn-sm" onClick={function() { setShowBookingForm(function(v) { return !v; }); setBookingData(function(b) { return Object.assign({}, b, { isMeet: true }); }); }}>Enter manually</button>
+                  <button className="btn btn-primary" disabled={!datePasteText.trim() || datePasteLoading} onClick={function() { parseDatePaste(true); }}>
+                    {datePasteLoading && bookingData.isMeet ? <Spinner /> : "Extract Date →"}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div>
+                {parsedDates.length === 0 ? (
+                  <div><div className="text-sm text-muted mb-8">No dates found. Add manually.</div><button className="btn btn-ghost btn-sm" onClick={function() { setParsedDates(null); setDatePasteText(""); }}>Try again</button></div>
+                ) : (
+                  <div>
+                    {parsedDates.map(function(d, i) {
+                      return (
+                        <div key={i} className="card card-tap card-sm" style={{ margin: "0 0 6px", opacity: d.selected ? 1 : 0.4 }} onClick={function() { setParsedDates(function(prev) { return prev.map(function(x, j) { return j === i ? Object.assign({}, x, { selected: !x.selected }) : x; }); }); }}>
+                          <div className="row-between"><div><div style={{ fontWeight: 600, fontSize: 13 }}>{d.label || d.date}</div>{d.time && <div className="text-xs text-muted">{d.time}</div>}</div><span style={{ fontSize: 16 }}>{d.selected ? "✅" : "⬜"}</span></div>
+                        </div>
+                      );
+                    })}
+                    <div className="btn-row mt-8" style={{ padding: 0 }}>
+                      <button className="btn btn-ghost" onClick={function() { setParsedDates(null); setDatePasteText(""); }}>Start over</button>
+                      <button className="btn btn-yellow" style={{ background: "#fdcb6e", color: "#1a1a00" }} disabled={!parsedDates.some(function(d) { return d.selected; })} onClick={function() { saveAllParsedDates(true); }}>🤝 Add Meet and Greet ✓</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Manual meet form */}
+          {showBookingForm && bookingData.isMeet && (
+            <div className="card" style={{ marginTop: 4 }}>
+              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12 }}>🤝 Meet and Greet</div>
+              <div className="input-group"><div className="input-label">Date</div><input className="input" type="date" value={bookingData.date} onChange={function(e) { setBookingData(function(b) { return Object.assign({}, b, { date: e.target.value }); }); }} /></div>
+              <div className="input-group"><div className="input-label">Time</div><input className="input" type="time" value={bookingData.time} onChange={function(e) { setBookingData(function(b) { return Object.assign({}, b, { time: e.target.value }); }); }} /></div>
+              <div className="btn-row mt-8" style={{ padding: 0 }}>
+                <button className="btn btn-ghost" onClick={function() { setShowBookingForm(false); }}>Cancel</button>
+                <button className="btn btn-green" disabled={!bookingData.date} onClick={saveBooking}>Save ✓</button>
+              </div>
+            </div>
           )}
 
+          {/* Existing visits */}
+          {visits.length > 0 && <div className="section-label" style={{ marginTop: 24 }}>BOOKED</div>}
           {visits.map(function(v) {
             const svc = SERVICE_MAP[v.serviceType];
+            const dogs = db.getAll("dogs").filter(function(d) { return d.personId === personId; });
+            const cats = db.getAll("cats").filter(function(c) { return c.personId === personId; });
+            const petNames = dogs.map(function(d) { return d.name; }).concat(cats.map(function(c) { return c.name; })).filter(Boolean).join(", ");
             return (
               <div key={v.id} className="card card-sm">
                 <div className="row-between">
                   <div>
                     <div style={{ fontWeight: 600, fontSize: 14 }}>{v.isMeetGreet ? "🤝 Meet and Greet" : ((svc && svc.icon) || "") + " " + ((svc && svc.label) || v.serviceType)}</div>
+                    <div className="text-sm" style={{ color: "var(--text)", marginTop: 2 }}>{person.name}{petNames ? " · " + petNames : ""}</div>
                     <div className="text-xs text-muted">{fmtDate(v.date)}{v.time ? " · " + v.time : ""}{v.duration ? " · " + v.duration : ""}</div>
                   </div>
                   <div className="row">
@@ -1932,10 +2008,16 @@ function PersonDetail({ personId, onBack, onUpdate }) {
 function TabToday({ onOpenPerson }) {
   const [completedActions, setCompletedActions] = useState(function() { return db.get("completedActions") || {}; });
   const [completedVisits, setCompletedVisits] = useState(function() { return db.get("completedVisits") || {}; });
+  const [pendingDone, setPendingDone] = useState(null); // visitId waiting for confirm
 
   const people = db.getAll("people");
   const visits = db.getAll("visits");
-  const todayVisits = visits.filter(function(v) { return v.date === todayStr() && v.status !== "cancelled" && v.status !== "completed"; }).sort(function(a, b) { return (a.time || "").localeCompare(b.time || ""); });
+
+  const tomorrowDate = new Date(); tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+  const tomorrowStr = tomorrowDate.toISOString().split("T")[0];
+
+  const todayVisits = visits.filter(function(v) { return v.date === todayStr() && v.status !== "cancelled"; }).sort(function(a, b) { return (a.time || "").localeCompare(b.time || ""); });
+  const tomorrowVisits = visits.filter(function(v) { return v.date === tomorrowStr && v.status !== "cancelled"; }).sort(function(a, b) { return (a.time || "").localeCompare(b.time || ""); });
   const actions = computeActions(people);
   const waiting = people.filter(function(p) { return p.stage === "replied"; });
 
@@ -1946,14 +2028,56 @@ function TabToday({ onOpenPerson }) {
   const outstanding = weekVisits.filter(function(v) { return !v.paid && v.amount; }).reduce(function(s, v) { return s + parseFloat(v.amount || 0); }, 0);
 
   const toggleAction = function(id) { const next = Object.assign({}, completedActions, { [id]: !completedActions[id] }); setCompletedActions(next); db.set("completedActions", next); };
-  const toggleVisit = function(id) {
-    const next = Object.assign({}, completedVisits, { [id]: !completedVisits[id] }); setCompletedVisits(next); db.set("completedVisits", next);
+
+  const confirmDone = function(id) {
+    const next = Object.assign({}, completedVisits, { [id]: true }); setCompletedVisits(next); db.set("completedVisits", next);
     const all = db.getAll("visits"); const idx = all.findIndex(function(v) { return v.id === id; });
-    if (idx >= 0) { all[idx].status = next[id] ? "completed" : "confirmed"; db.set("visits", all); }
+    if (idx >= 0) { all[idx].status = "completed"; db.set("visits", all); }
+    setPendingDone(null);
   };
 
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+
+  const renderVisit = function(v, isToday) {
+    const p = people.find(function(x) { return x.id === v.personId; });
+    const dogs = db.getAll("dogs").filter(function(d) { return d.personId === v.personId; });
+    const cats = db.getAll("cats").filter(function(c) { return c.personId === v.personId; });
+    const petNames = dogs.map(function(d) { return d.name; }).concat(cats.map(function(c) { return c.name; })).filter(Boolean).join(", ");
+    const done = completedVisits[v.id];
+    const isPending = pendingDone === v.id;
+    const svc = SERVICE_MAP[v.serviceType];
+    return (
+      <div key={v.id} className="card" style={{ opacity: done ? 0.45 : 1 }}>
+        {isPending ? (
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 10 }}>Mark as done?</div>
+            <div className="text-sm text-muted mb-12">{v.isMeetGreet ? "Meet and Greet" : ((svc && svc.label) || "Visit")} with {p && p.name}{petNames ? " (" + petNames + ")" : ""} — {v.time || fmtDate(v.date)}</div>
+            <div className="btn-row" style={{ padding: 0 }}>
+              <button className="btn btn-ghost" onClick={function() { setPendingDone(null); }}>Cancel</button>
+              <button className="btn btn-green" onClick={function() { confirmDone(v.id); }}>Yes, done ✓</button>
+            </div>
+          </div>
+        ) : (
+          <div className="check-row">
+            <CheckBox done={done} onToggle={function() { if (!done) setPendingDone(v.id); }} />
+            <div style={{ flex: 1, cursor: "pointer" }} onClick={function() { if (p) onOpenPerson(p.id); }}>
+              <div className="row-between">
+                <div style={{ fontWeight: 700, fontSize: 15 }}>
+                  {(v.time || "—") + " · " + (v.isMeetGreet ? "Meet and Greet" : (petNames || (p && p.name) || "Visit"))}
+                </div>
+                <span className={"badge " + (v.isMeetGreet ? "badge-yellow" : "badge-purple")}>{v.isMeetGreet ? "🤝 Meet" : (v.duration || ((svc && svc.label) || ""))}</span>
+              </div>
+              <div className="text-sm text-muted mt-4">
+                {p && p.name}{petNames ? " · " + petNames : ""}
+                {" · " + ((p && (p.address || (p.extracted && p.extracted.location))) || "").split(",")[0]}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div>
@@ -1965,26 +2089,15 @@ function TabToday({ onOpenPerson }) {
 
       <div className="section-label">VISITS AND WALKS TODAY</div>
       {todayVisits.length === 0 ? (
-        <div style={{ padding: "8px 16px 4px" }}><div className="text-sm text-muted">No walks booked today 🌿</div></div>
-      ) : todayVisits.map(function(v) {
-        const p = people.find(function(x) { return x.id === v.personId; });
-        const dogs = db.getAll("dogs").filter(function(d) { return d.personId === v.personId; });
-        const done = completedVisits[v.id];
-        return (
-          <div key={v.id} className="card" style={{ opacity: done ? 0.5 : 1 }}>
-            <div className="check-row">
-              <CheckBox done={done} onToggle={function() { toggleVisit(v.id); }} />
-              <div style={{ flex: 1, cursor: "pointer" }} onClick={function() { if (p) onOpenPerson(p.id); }}>
-                <div className="row-between">
-                  <div style={{ fontWeight: 700, fontSize: 15 }}>{(v.time || "—") + " · " + (v.isMeetGreet ? "Meet and Greet" : (dogs.map(function(d) { return d.name; }).join(", ") || "Dog"))}</div>
-                  <span className={"badge " + (v.isMeetGreet ? "badge-yellow" : "badge-purple")}>{v.isMeetGreet ? "🤝 Meet" : (v.duration || ((SERVICE_MAP[v.serviceType] && SERVICE_MAP[v.serviceType].label) || ""))}</span>
-                </div>
-                <div className="text-sm text-muted mt-4">{(p && p.name) + " · " + ((p && (p.address || (p.extracted && p.extracted.location))) || "").split(",")[0]}</div>
-              </div>
-            </div>
-          </div>
-        );
-      })}
+        <div style={{ padding: "8px 16px 4px" }}><div className="text-sm text-muted">No visits booked today 🌿</div></div>
+      ) : todayVisits.map(function(v) { return renderVisit(v, true); })}
+
+      {tomorrowVisits.length > 0 && (
+        <div>
+          <div className="section-label">TOMORROW</div>
+          {tomorrowVisits.map(function(v) { return renderVisit(v, false); })}
+        </div>
+      )}
 
       <div className="section-label">TO DO</div>
       {actions.length === 0 ? (
@@ -2000,7 +2113,7 @@ function TabToday({ onOpenPerson }) {
               <div style={{ flex: 1 }}>
                 <div className="row-between">
                   <div className="row flex-1" style={{ cursor: "pointer" }} onClick={function() { if (!done && p) onOpenPerson(p.id); }}>
-                    <span className="dot" style={{ background: action.urgency === "high" ? "var(--orange)" : "var(--yellow)" }} />
+                    <span className="dot" style={{ background: action.urgency === "high" ? "var(--orange)" : action.urgency === "medium" ? "var(--yellow)" : "var(--muted2)" }} />
                     <span style={{ fontWeight: 600, fontSize: 13 }}>{action.label}</span>
                   </div>
                   {!done && p && (
