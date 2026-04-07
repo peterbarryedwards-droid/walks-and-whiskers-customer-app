@@ -579,13 +579,17 @@ function MessagingFlow({ person, onBack, onPersonUpdated, onEditMsg, onDeleteMsg
     const prompt = "You are helping Freddie, a pet care professional, analyse an enquiry on " + platform + ".\n" +
       "Enquiry type: " + (enquiryType && enquiryType.label) + "\nMessage: \"\"\"" + rawMessage + "\"\"\"\n\n" +
       "Extract all visible info. Identify what is genuinely missing.\n" +
-      "For the service field, be specific: dog_walk, cat_visit, dog_drop_in, home_sit, stay_over — detect from context.\n" +
+      "For the service field: read the message carefully to detect what service is needed.\n" +
+      "Use: dog_walk (dog walking), cat_visit (cat sitting or visiting), dog_drop_in (dog drop-in visit), home_sit (home sitting with dogs), stay_over (overnight stay).\n" +
+      "If they mention a cat, cat sitting, or cat visit — service must be cat_visit.\n" +
+      "If they mention dog walking — service is dog_walk.\n" +
+      "If they mention sitting overnight or home sitting — service is home_sit.\n" +
       "Reply with ONLY valid JSON:\n" +
       "{\"extracted\":{\"client_name\":null,\"dog_name\":null,\"service\":null,\"dates\":null,\"location\":null,\"rate\":null,\"recurring\":null,\"notes\":null}," +
       "\"questions\":[{\"field\":\"field_name\",\"question\":\"friendly question\",\"hint\":\"short hint\",\"required\":true}]}\n" +
       "Rules:\n- Only ask about genuinely missing fields\n" +
-      "- dog_name field is used for ALL pets (dogs and cats) — if service appears to be cat-related, ask for the cat name\n" +
-      "- if service is cat-related label the question as 'cat name' not 'dog name'\n" +
+      "- dog_name field covers ALL pets — if cat service, ask for cat name and label it as cat name\n" +
+      "- if service is cat-related, all pet references should say 'cat' not 'dog'\n" +
       "- dog_name: if missing hint is Check the " + platform + " profile or type skip, required false\n" +
       "- location: if missing required true\n" +
       "- rate: ONLY ask if platform is Direct or Other, NEVER for Rover or Bark\n" +
@@ -1258,58 +1262,60 @@ function CatWizard({ personId, existingCat, onSave, onBack }) {
 
 /* ADD CLIENT FLOW — paste notes, AI extracts profile */
 function AddClient({ onSave, onBack }) {
-  const [step, setStep] = useState("paste"); // paste | loading | review
+  const [step, setStep] = useState("paste"); // paste | loading | summary | questions | review
   const [notes, setNotes] = useState("");
   const [extracted, setExtracted] = useState(null);
+  const [questions, setQuestions] = useState([]);
+  const [qStep, setQStep] = useState(0);
+  const [qAnswers, setQAnswers] = useState({});
+  const [qInput, setQInput] = useState("");
   const [toast, setToast] = useState(null);
+  const inputRef = useRef(null);
 
   const showToast = function(msg) { setToast(msg); setTimeout(function() { setToast(null); }, 3000); };
 
   const analyse = async function() {
     if (!notes.trim()) return;
     setStep("loading");
-    const prompt = "You are helping Freddie, a dog walker, create a client record from notes.\n\n" +
+    const prompt = "You are helping Freddie, a pet care professional in Winchester, create a client record from notes or a message.\n\n" +
       "Notes:\n\"\"\"" + notes + "\"\"\"\n\n" +
-      "Extract all information visible. Return ONLY valid JSON:\n" +
-      "{\n" +
-      "  \"owner_name\": null,\n" +
-      "  \"phone\": null,\n" +
-      "  \"address\": null,\n" +
-      "  \"postcode\": null,\n" +
-      "  \"platform\": null,\n" +
-      "  \"service_type\": null,\n" +
-      "  \"rate\": null,\n" +
-      "  \"access_notes\": null,\n" +
-      "  \"pets\": [\n" +
-      "    {\n" +
-      "      \"type\": \"dog or cat\",\n" +
-      "      \"name\": null,\n" +
-      "      \"breed\": null,\n" +
-      "      \"age\": null,\n" +
-      "      \"size\": null,\n" +
-      "      \"personality\": null,\n" +
-      "      \"goodWithDogs\": null,\n" +
-      "      \"goodOnLead\": null,\n" +
-      "      \"motivation\": null,\n" +
-      "      \"recall\": null,\n" +
-      "      \"feeding\": null,\n" +
-      "      \"walkingSpots\": null,\n" +
-      "      \"healthIssues\": null,\n" +
-      "      \"vet\": null,\n" +
-      "      \"vetPhone\": null,\n" +
-      "      \"spooks\": null,\n" +
-      "      \"medication\": null\n" +
-      "    }\n" +
-      "  ],\n" +
-      "  \"job_notes\": null,\n" +
-      "  \"schedule\": null,\n" +
-      "  \"house_notes\": null\n" +
-      "}";
+      "Extract all visible information. Detect service type carefully: dog_walk, cat_visit, dog_drop_in, home_sit, stay_over.\n" +
+      "Identify what critical information is genuinely missing.\n" +
+      "Return ONLY valid JSON:\n" +
+      "{" +
+      "\"extracted\":{\"owner_name\":null,\"phone\":null,\"address\":null,\"postcode\":null,\"platform\":null,\"service_type\":null,\"rate\":null,\"access_notes\":null,\"job_notes\":null,\"schedule\":null,\"house_notes\":null," +
+      "\"pets\":[{\"type\":\"dog or cat\",\"name\":null,\"breed\":null,\"age\":null,\"size\":null,\"personality\":null,\"goodWithDogs\":null,\"goodOnLead\":null,\"motivation\":null,\"recall\":null,\"feeding\":null,\"walkingSpots\":null,\"healthIssues\":null,\"vet\":null,\"vetPhone\":null,\"spooks\":null,\"medication\":null}]}," +
+      "\"questions\":[{\"field\":\"field_name\",\"question\":\"question to ask Freddie\",\"hint\":\"short hint\",\"required\":true}]" +
+      "}\n" +
+      "Only ask about genuinely critical missing fields: owner name (if missing), pet name (if missing), address (if missing).\n" +
+      "Do not ask about optional fields like personality or walking spots if not mentioned.\n" +
+      "questions can be empty [].";
     try {
       const result = await callClaudeJSON(prompt);
-      setExtracted(result);
-      setStep("review");
+      setExtracted(result.extracted || {});
+      setQuestions(result.questions || []);
+      setQStep(0); setQAnswers({});
+      setStep("summary");
     } catch { showToast("Couldn't extract — try again"); setStep("paste"); }
+  };
+
+  const nextQ = function() {
+    if (!qInput.trim()) return;
+    const q = questions[qStep];
+    const next = Object.assign({}, qAnswers, { [q.field]: qInput.trim() });
+    setQAnswers(next); setQInput("");
+    if (qStep < questions.length - 1) {
+      setQStep(function(s) { return s + 1; });
+      setTimeout(function() { if (inputRef.current) inputRef.current.focus(); }, 80);
+    } else {
+      // Merge answers into extracted
+      const merged = Object.assign({}, extracted);
+      Object.entries(next).forEach(function(e) {
+        if (e[1]) merged[e[0]] = e[1];
+      });
+      setExtracted(merged);
+      setStep("review");
+    }
   };
 
   const save = function() {
@@ -1335,17 +1341,16 @@ function AddClient({ onSave, onBack }) {
       houseNotes: extracted.house_notes || "",
     };
     db.upsert("people", person);
-    // Save pets
-    if (extracted.pets && extracted.pets.length > 0) {
-      extracted.pets.forEach(function(pet) {
-        if (!pet.name) return;
-        if (pet.type === "cat") {
-          db.upsert("cats", { id: uid(), personId, name: pet.name || "", age: pet.age || "", indoorOutdoor: "", feedingRoutine: pet.feeding || "", litterNotes: "", medication: pet.medication ? "Yes" : "No", medicationNotes: pet.medication || "", personality: pet.personality || "" });
-        } else {
-          db.upsert("dogs", { id: uid(), personId, name: pet.name || "", breed: pet.breed || "", age: pet.age || "", size: pet.size || "", goodWithDogs: pet.goodWithDogs || "", goodOnLead: pet.goodOnLead || "", healthIssues: pet.healthIssues ? "Yes" : "No", healthNotes: pet.healthIssues || "", spooks: pet.spooks || "", vet: pet.vet || "", vetPhone: pet.vetPhone || "", personality: (pet.personality || "") + (pet.motivation ? " Motivated by: " + pet.motivation : "") + (pet.recall ? " Recall: " + pet.recall : "") + (pet.walkingSpots ? " Walking spots: " + pet.walkingSpots : "") + (pet.feeding ? " Feeding: " + pet.feeding : ""), meetGreetResult: "" });
-        }
-      });
-    }
+    const pets = extracted.pets || [];
+    pets.forEach(function(pet) {
+      if (!pet.name) return;
+      if (pet.type === "cat") {
+        db.upsert("cats", { id: uid(), personId, name: pet.name || "", age: pet.age || "", indoorOutdoor: "", feedingRoutine: pet.feeding || "", litterNotes: "", medication: pet.medication ? "Yes" : "No", medicationNotes: pet.medication || "", personality: pet.personality || "" });
+      } else {
+        const notes = [pet.personality, pet.motivation ? "Motivation: " + pet.motivation : null, pet.recall ? "Recall: " + pet.recall : null, pet.walkingSpots ? "Walking: " + pet.walkingSpots : null, pet.feeding ? "Feeding: " + pet.feeding : null].filter(Boolean).join(". ");
+        db.upsert("dogs", { id: uid(), personId, name: pet.name || "", breed: pet.breed || "", age: pet.age || "", size: pet.size || "", goodWithDogs: pet.goodWithDogs || "", goodOnLead: pet.goodOnLead || "", healthIssues: pet.healthIssues ? "Yes" : "No", healthNotes: pet.healthIssues || "", spooks: pet.spooks || "", vet: pet.vet || "", vetPhone: pet.vetPhone || "", personality: notes, meetGreetResult: "" });
+      }
+    });
     onSave(personId);
   };
 
@@ -1386,11 +1391,67 @@ function AddClient({ onSave, onBack }) {
     );
   }
 
+  if (step === "summary" && extracted) {
+    const foundCount = [extracted.owner_name, extracted.phone, extracted.address, (extracted.pets && extracted.pets.length > 0 && extracted.pets[0].name) ? "pet" : null].filter(Boolean).length;
+    return (
+      <div className="fade-up">
+        <BackBtn onBack={function() { setStep("paste"); }} />
+        <div style={{ padding: "0 16px 24px" }}>
+          <div style={{ fontSize: 11, color: "var(--purple)", fontWeight: 700, letterSpacing: 0.5, marginBottom: 8 }}>WHAT I FOUND</div>
+          <div className="page-title mb-4">{"Here's what I got"}</div>
+          <div className="page-sub mb-16">Review, then I'll ask for anything critical that's missing.</div>
+          <div className="card" style={{ marginLeft: 0, marginRight: 0, marginBottom: 14 }}>
+            {[["👤","Owner name",extracted.owner_name],["📞","Phone",extracted.phone],["🏠","Address",extracted.address],["📱","Platform",extracted.platform],["🦮","Service",extracted.service_type]].map(function(f, i) {
+              if (!f[2]) return null;
+              return <div key={i} className="found-row"><span style={{ fontSize: 17, width: 26 }}>{f[0]}</span><div className="flex-1"><div style={{ fontSize: 11, color: "var(--muted2)", fontWeight: 700, textTransform: "uppercase" }}>{f[1]}</div><div style={{ fontSize: 14, color: "#c8d0f0", marginTop: 2 }}>{f[2]}</div></div><span className="text-green">✓</span></div>;
+            })}
+            {(extracted.pets || []).filter(function(p) { return p.name; }).map(function(pet, i) {
+              return <div key={"pet" + i} className="found-row"><span style={{ fontSize: 17, width: 26 }}>{pet.type === "cat" ? "🐱" : "🐕"}</span><div className="flex-1"><div style={{ fontSize: 11, color: "var(--muted2)", fontWeight: 700, textTransform: "uppercase" }}>Pet</div><div style={{ fontSize: 14, color: "#c8d0f0", marginTop: 2 }}>{pet.name + (pet.breed ? " · " + pet.breed : "")}</div></div><span className="text-green">✓</span></div>;
+            })}
+            {foundCount === 0 && <div className="text-sm text-muted">Not much found — questions will fill in the gaps.</div>}
+            {questions.length > 0 && (
+              <div style={{ marginTop: 14 }}>
+                <div style={{ fontSize: 11, color: "var(--muted2)", fontWeight: 700, textTransform: "uppercase", marginBottom: 8 }}>{"Still need (" + questions.length + ")"}</div>
+                <div style={{ display: "flex", flexWrap: "wrap" }}>{questions.map(function(q) { return <span key={q.field} className="missing-chip">❓ {q.field.replace(/_/g, " ")}</span>; })}</div>
+              </div>
+            )}
+          </div>
+          <button className="btn btn-primary" onClick={function() { if (questions.length > 0) setStep("questions"); else setStep("review"); }}>
+            {questions.length > 0 ? ("Answer " + questions.length + " question" + (questions.length !== 1 ? "s" : "") + " →") : "Review and Save →"}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (step === "questions" && questions.length > 0) {
+    const currentQ = questions[qStep];
+    const pctW = qStep > 0 ? (Math.round(qStep * 100 / questions.length) + "%") : "0%";
+    return (
+      <div className="fade-up">
+        <BackBtn onBack={function() { if (qStep === 0) setStep("summary"); else setQStep(function(s) { return s - 1; }); }} />
+        <div style={{ padding: "0 16px 24px" }}>
+          <div style={{ fontSize: 11, color: "var(--purple)", fontWeight: 700, letterSpacing: 0.5, marginBottom: 12 }}>{"QUESTION " + (qStep + 1) + " OF " + questions.length}</div>
+          <div className="progress-track"><div className="progress-fill" style={{ width: pctW }} /></div>
+          <div style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.3, marginBottom: 6 }}>{currentQ.question}</div>
+          {currentQ.hint && <div className="text-sm text-muted mb-16">{currentQ.hint}</div>}
+          <input ref={inputRef} className="input" type="text" value={qInput} onChange={function(e) { setQInput(e.target.value); }} placeholder="Your answer..." onKeyDown={function(e) { if (e.key === "Enter") nextQ(); }} autoFocus />
+          <div className="btn-row mt-12" style={{ padding: 0 }}>
+            {!currentQ.required && <button className="btn btn-ghost" onClick={function() { setQInput(""); nextQ(); }}>Skip</button>}
+            <button className="btn btn-primary" disabled={!qInput.trim()} style={{ opacity: qInput.trim() ? 1 : 0.4 }} onClick={nextQ}>
+              {qStep === questions.length - 1 ? "Review →" : "Next →"}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (step === "review" && extracted) {
     const pets = extracted.pets || [];
     return (
       <div className="fade-up">
-        <BackBtn onBack={function() { setStep("paste"); }} />
+        <BackBtn onBack={function() { setStep(questions.length > 0 ? "questions" : "summary"); }} />
         <div style={{ padding: "0 16px 24px" }}>
           <div className="page-title mb-4">Review and Save</div>
           <div className="page-sub mb-16">Check what I found, then save the record.</div>
@@ -1432,7 +1493,7 @@ function AddClient({ onSave, onBack }) {
               </div>
             );
           })}
-          {pets.length === 0 && <div style={{ padding: "4px 0" }}><div className="text-sm text-muted" style={{ paddingLeft: 16 }}>No pets found — you can add them after saving</div></div>}
+          {pets.length === 0 && <div style={{ padding: "4px 0" }}><div className="text-sm text-muted">No pets found — you can add them after saving</div></div>}
 
           {(extracted.job_notes || extracted.schedule || extracted.house_notes) && (
             <div>
@@ -1454,8 +1515,6 @@ function AddClient({ onSave, onBack }) {
 
   return null;
 }
-
-/* NOTES TAB — paste and AI extract */
 function NotesTab({ person, onUpdate }) {
   const [pasteMode, setPasteMode] = useState(false);
   const [pasteText, setPasteText] = useState("");
@@ -1597,8 +1656,10 @@ function PersonDetail({ personId, onBack, onUpdate }) {
   const [showBookingForm, setShowBookingForm] = useState(false);
   const [bookingData, setBookingData] = useState({ date: "", time: "", serviceType: "dog_walk", duration: "30 min", isMeet: false });
   const [datePasteText, setDatePasteText] = useState("");
+  const [meetPasteText, setMeetPasteText] = useState("");
   const [datePasteLoading, setDatePasteLoading] = useState(false);
-  const [parsedDates, setParsedDates] = useState(null); // null | array of {date, time, selected}
+  const [parsedDates, setParsedDates] = useState(null);   // for bookings
+  const [parsedMeet, setParsedMeet] = useState(null);     // for meets
 
   const person = db.getAll("people").find(function(p) { return p.id === personId; });
   const dogs = db.getAll("dogs").filter(function(d) { return d.personId === personId; });
@@ -1653,25 +1714,29 @@ function PersonDetail({ personId, onBack, onUpdate }) {
     refresh();
   };
 
-  // AI date paste parse
+  // AI date paste parse — booking and meet use separate state
   const parseDatePaste = async function(isMeet) {
-    if (!datePasteText.trim()) return;
+    const text = isMeet ? meetPasteText : datePasteText;
+    if (!text.trim()) return;
     setDatePasteLoading(true);
-    setBookingData(function(b) { return Object.assign({}, b, { isMeet: isMeet }); });
     try {
       const today = new Date();
-      const prompt = "Extract all dates and times from this message. Today is " + today.toDateString() + ".\n\nMessage: \"" + datePasteText + "\"\n\nReturn ONLY valid JSON:\n{\"dates\":[{\"date\":\"YYYY-MM-DD\",\"time\":\"HH:MM or empty string\",\"label\":\"friendly label e.g. Mon 14 July at 10:30am\"}]}\n\nRules:\n- Use next upcoming occurrence for day names (e.g. next Tuesday from today)\n- If multiple times for same date, create one entry per time\n- If year not specified use " + today.getFullYear() + "\n- Return empty array if nothing found";
+      const prompt = "Extract all dates and times from this message. Today is " + today.toDateString() + ".\n\nMessage: \"" + text + "\"\n\nReturn ONLY valid JSON:\n{\"dates\":[{\"date\":\"YYYY-MM-DD\",\"time\":\"HH:MM or empty string\",\"label\":\"friendly label e.g. Mon 14 July at 10:30am\"}]}\n\nRules:\n- Use next upcoming occurrence for day names (e.g. next Tuesday from today)\n- If multiple times for same date, create one entry per time\n- If year not specified use " + today.getFullYear() + "\n- Return empty array if nothing found";
       const result = await callClaudeJSON(prompt);
       const dates = (result.dates || []).filter(function(d) { return d.date; }).map(function(d) { return Object.assign({}, d, { selected: true }); });
-      dates._isMeet = isMeet;
-      setParsedDates(dates);
-    } catch { setParsedDates([]); }
+      if (isMeet) setParsedMeet(dates);
+      else setParsedDates(dates);
+    } catch {
+      if (isMeet) setParsedMeet([]);
+      else setParsedDates([]);
+    }
     setDatePasteLoading(false);
   };
 
   const saveAllParsedDates = function(isMeet) {
-    if (!parsedDates) return;
-    const selected = parsedDates.filter(function(d) { return d.selected && d.date; });
+    const list = isMeet ? parsedMeet : parsedDates;
+    if (!list) return;
+    const selected = list.filter(function(d) { return d.selected && d.date; });
     for (const d of selected) {
       db.upsert("visits", { id: uid(), personId, serviceType: bookingData.serviceType || "dog_walk", date: d.date, time: d.time || "", duration: bookingData.duration || "30 min", status: "confirmed", isMeetGreet: isMeet, paid: false, amount: "" });
     }
@@ -1679,7 +1744,8 @@ function PersonDetail({ personId, onBack, onUpdate }) {
       const all = db.getAll("people"); const idx = all.findIndex(function(p) { return p.id === personId; });
       if (idx >= 0) { all[idx].stage = isMeet ? "meet_arranged" : "active"; all[idx].lastActionDate = nowStr(); db.set("people", all); }
     }
-    setParsedDates(null); setDatePasteText("");
+    if (isMeet) { setParsedMeet(null); setMeetPasteText(""); }
+    else { setParsedDates(null); setDatePasteText(""); }
     refresh();
   };
   const saveMessageEdit = function(idx) {
@@ -1833,47 +1899,43 @@ function PersonDetail({ personId, onBack, onUpdate }) {
           <div className="section-label">ADD BOOKING</div>
           <div className="card">
             <div className="text-sm text-muted mb-8">Paste a message with dates and times — the AI will pull them out.</div>
-            {parsedDates === null || (parsedDates && parsedDates._isMeet) ? (
+            {!parsedDates ? (
               <div>
                 <textarea className="input" rows={3} value={datePasteText} onChange={function(e) { setDatePasteText(e.target.value); }} placeholder={"e.g. How about Tuesday 15th at 10am and Thursday 17th at 2pm?"} />
                 <div className="btn-row mt-8" style={{ padding: 0 }}>
                   <button className="btn btn-ghost btn-sm" onClick={function() { setShowBookingForm(function(v) { return !v; }); setBookingData(function(b) { return Object.assign({}, b, { isMeet: false }); }); }}>Enter manually</button>
                   <button className="btn btn-primary" disabled={!datePasteText.trim() || datePasteLoading} onClick={function() { parseDatePaste(false); }}>
-                    {datePasteLoading && !bookingData.isMeet ? <Spinner /> : "Extract Dates →"}
+                    {datePasteLoading ? <Spinner /> : "Extract Dates →"}
                   </button>
                 </div>
               </div>
+            ) : parsedDates.length === 0 ? (
+              <div>
+                <div className="text-sm text-muted mb-8">No dates found. Add manually or try again.</div>
+                <button className="btn btn-ghost btn-sm" onClick={function() { setParsedDates(null); setDatePasteText(""); }}>Try again</button>
+              </div>
             ) : (
               <div>
-                {parsedDates.length === 0 ? (
-                  <div>
-                    <div className="text-sm text-muted mb-8">No dates found. Add manually or try again.</div>
-                    <button className="btn btn-ghost btn-sm" onClick={function() { setParsedDates(null); setDatePasteText(""); }}>Try again</button>
-                  </div>
-                ) : (
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10, color: "var(--green)" }}>{"Found " + parsedDates.length + " date" + (parsedDates.length !== 1 ? "s" : "") + " — deselect any you don't want:"}</div>
-                    {parsedDates.map(function(d, i) {
-                      return (
-                        <div key={i} className="card card-tap card-sm" style={{ margin: "0 0 6px", opacity: d.selected ? 1 : 0.4 }} onClick={function() { setParsedDates(function(prev) { return prev.map(function(x, j) { return j === i ? Object.assign({}, x, { selected: !x.selected }) : x; }); }); }}>
-                          <div className="row-between"><div><div style={{ fontWeight: 600, fontSize: 13 }}>{d.label || d.date}</div>{d.time && <div className="text-xs text-muted">{d.time}</div>}</div><span style={{ fontSize: 16 }}>{d.selected ? "✅" : "⬜"}</span></div>
-                        </div>
-                      );
-                    })}
-                    <div className="input-group mt-10">
-                      <div className="input-label">Service</div>
-                      <div className="chip-row">{SERVICES.map(function(s) { return <Chip key={s.id} label={s.icon + " " + s.label} active={bookingData.serviceType === s.id} onClick={function() { setBookingData(function(b) { return Object.assign({}, b, { serviceType: s.id }); }); }} />; })}</div>
+                <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 10, color: "var(--green)" }}>{"Found " + parsedDates.length + " date" + (parsedDates.length !== 1 ? "s" : "") + " — deselect any you don't want:"}</div>
+                {parsedDates.map(function(d, i) {
+                  return (
+                    <div key={i} className="card card-tap card-sm" style={{ margin: "0 0 6px", opacity: d.selected ? 1 : 0.4 }} onClick={function() { setParsedDates(function(prev) { return prev.map(function(x, j) { return j === i ? Object.assign({}, x, { selected: !x.selected }) : x; }); }); }}>
+                      <div className="row-between"><div><div style={{ fontWeight: 600, fontSize: 13 }}>{d.label || d.date}</div>{d.time && <div className="text-xs text-muted">{d.time}</div>}</div><span style={{ fontSize: 16 }}>{d.selected ? "✅" : "⬜"}</span></div>
                     </div>
-                    <div className="input-group">
-                      <div className="input-label">Duration</div>
-                      <div className="chip-row">{["30 min","45 min","60 min"].map(function(dur) { return <Chip key={dur} label={dur} active={bookingData.duration === dur} onClick={function() { setBookingData(function(b) { return Object.assign({}, b, { duration: dur }); }); }} />; })}</div>
-                    </div>
-                    <div className="btn-row mt-4" style={{ padding: 0 }}>
-                      <button className="btn btn-ghost" onClick={function() { setParsedDates(null); setDatePasteText(""); }}>Start over</button>
-                      <button className="btn btn-green" disabled={!parsedDates.some(function(d) { return d.selected; })} onClick={function() { saveAllParsedDates(false); }}>{"Add " + parsedDates.filter(function(d) { return d.selected; }).length + " booking" + (parsedDates.filter(function(d) { return d.selected; }).length !== 1 ? "s" : "") + " ✓"}</button>
-                    </div>
-                  </div>
-                )}
+                  );
+                })}
+                <div className="input-group mt-10">
+                  <div className="input-label">Service</div>
+                  <div className="chip-row">{SERVICES.map(function(s) { return <Chip key={s.id} label={s.icon + " " + s.label} active={bookingData.serviceType === s.id} onClick={function() { setBookingData(function(b) { return Object.assign({}, b, { serviceType: s.id }); }); }} />; })}</div>
+                </div>
+                <div className="input-group">
+                  <div className="input-label">Duration</div>
+                  <div className="chip-row">{["30 min","45 min","60 min"].map(function(dur) { return <Chip key={dur} label={dur} active={bookingData.duration === dur} onClick={function() { setBookingData(function(b) { return Object.assign({}, b, { duration: dur }); }); }} />; })}</div>
+                </div>
+                <div className="btn-row mt-4" style={{ padding: 0 }}>
+                  <button className="btn btn-ghost" onClick={function() { setParsedDates(null); setDatePasteText(""); }}>Start over</button>
+                  <button className="btn btn-green" disabled={!parsedDates.some(function(d) { return d.selected; })} onClick={function() { saveAllParsedDates(false); }}>{"Add " + parsedDates.filter(function(d) { return d.selected; }).length + " booking" + (parsedDates.filter(function(d) { return d.selected; }).length !== 1 ? "s" : "") + " ✓"}</button>
+                </div>
               </div>
             )}
           </div>
@@ -1903,35 +1965,31 @@ function PersonDetail({ personId, onBack, onUpdate }) {
           <div className="section-label" style={{ marginTop: 24 }}>ADD MEET AND GREET</div>
           <div className="card">
             <div className="text-sm text-muted mb-8">Paste a message to extract the date, or add it manually.</div>
-            {parsedDates === null || !(parsedDates && parsedDates._isMeet) ? (
+            {!parsedMeet ? (
               <div>
-                <textarea className="input" rows={3} value={datePasteText} onChange={function(e) { setDatePasteText(e.target.value); }} placeholder={"e.g. Are you free Monday 12th at 11am for a quick meet?"} />
+                <textarea className="input" rows={3} value={meetPasteText} onChange={function(e) { setMeetPasteText(e.target.value); }} placeholder={"e.g. Are you free Monday 12th at 11am for a quick meet?"} />
                 <div className="btn-row mt-8" style={{ padding: 0 }}>
                   <button className="btn btn-ghost btn-sm" onClick={function() { setShowBookingForm(function(v) { return !v; }); setBookingData(function(b) { return Object.assign({}, b, { isMeet: true }); }); }}>Enter manually</button>
-                  <button className="btn btn-primary" disabled={!datePasteText.trim() || datePasteLoading} onClick={function() { parseDatePaste(true); }}>
-                    {datePasteLoading && bookingData.isMeet ? <Spinner /> : "Extract Date →"}
+                  <button className="btn btn-primary" disabled={!meetPasteText.trim() || datePasteLoading} onClick={function() { parseDatePaste(true); }}>
+                    {datePasteLoading ? <Spinner /> : "Extract Date →"}
                   </button>
                 </div>
               </div>
+            ) : parsedMeet.length === 0 ? (
+              <div><div className="text-sm text-muted mb-8">No dates found. Add manually.</div><button className="btn btn-ghost btn-sm" onClick={function() { setParsedMeet(null); setMeetPasteText(""); }}>Try again</button></div>
             ) : (
               <div>
-                {parsedDates.length === 0 ? (
-                  <div><div className="text-sm text-muted mb-8">No dates found. Add manually.</div><button className="btn btn-ghost btn-sm" onClick={function() { setParsedDates(null); setDatePasteText(""); }}>Try again</button></div>
-                ) : (
-                  <div>
-                    {parsedDates.map(function(d, i) {
-                      return (
-                        <div key={i} className="card card-tap card-sm" style={{ margin: "0 0 6px", opacity: d.selected ? 1 : 0.4 }} onClick={function() { setParsedDates(function(prev) { return prev.map(function(x, j) { return j === i ? Object.assign({}, x, { selected: !x.selected }) : x; }); }); }}>
-                          <div className="row-between"><div><div style={{ fontWeight: 600, fontSize: 13 }}>{d.label || d.date}</div>{d.time && <div className="text-xs text-muted">{d.time}</div>}</div><span style={{ fontSize: 16 }}>{d.selected ? "✅" : "⬜"}</span></div>
-                        </div>
-                      );
-                    })}
-                    <div className="btn-row mt-8" style={{ padding: 0 }}>
-                      <button className="btn btn-ghost" onClick={function() { setParsedDates(null); setDatePasteText(""); }}>Start over</button>
-                      <button className="btn btn-yellow" style={{ background: "#fdcb6e", color: "#1a1a00" }} disabled={!parsedDates.some(function(d) { return d.selected; })} onClick={function() { saveAllParsedDates(true); }}>🤝 Add Meet and Greet ✓</button>
+                {parsedMeet.map(function(d, i) {
+                  return (
+                    <div key={i} className="card card-tap card-sm" style={{ margin: "0 0 6px", opacity: d.selected ? 1 : 0.4 }} onClick={function() { setParsedMeet(function(prev) { return prev.map(function(x, j) { return j === i ? Object.assign({}, x, { selected: !x.selected }) : x; }); }); }}>
+                      <div className="row-between"><div><div style={{ fontWeight: 600, fontSize: 13 }}>{d.label || d.date}</div>{d.time && <div className="text-xs text-muted">{d.time}</div>}</div><span style={{ fontSize: 16 }}>{d.selected ? "✅" : "⬜"}</span></div>
                     </div>
-                  </div>
-                )}
+                  );
+                })}
+                <div className="btn-row mt-8" style={{ padding: 0 }}>
+                  <button className="btn btn-ghost" onClick={function() { setParsedMeet(null); setMeetPasteText(""); }}>Start over</button>
+                  <button className="btn btn-primary" style={{ background: "#fdcb6e", color: "#1a1a00" }} disabled={!parsedMeet.some(function(d) { return d.selected; })} onClick={function() { saveAllParsedDates(true); }}>🤝 Add Meet and Greet ✓</button>
+                </div>
               </div>
             )}
           </div>
@@ -2006,8 +2064,15 @@ function PersonDetail({ personId, onBack, onUpdate }) {
 
 /* TAB: TODAY */
 function TabToday({ onOpenPerson }) {
-  const [completedActions, setCompletedActions] = useState(function() { return db.get("completedActions") || {}; });
-  const [completedVisits, setCompletedVisits] = useState(function() { return db.get("completedVisits") || {}; });
+  const [completedActions, setCompletedActions] = useState(function() {
+    const saved = db.get("completedActions") || {};
+    // Clear if saved on a different day
+    if (saved._date !== todayStr()) return { _date: todayStr() };
+    return saved;
+  });
+  const [completedVisits, setCompletedVisits] = useState(function() {
+    return db.get("completedVisits") || {};
+  });
   const [pendingDone, setPendingDone] = useState(null); // visitId waiting for confirm
 
   const people = db.getAll("people");
@@ -2027,7 +2092,7 @@ function TabToday({ onOpenPerson }) {
   const earned = weekVisits.filter(function(v) { return v.paid && v.amount; }).reduce(function(s, v) { return s + parseFloat(v.amount || 0); }, 0);
   const outstanding = weekVisits.filter(function(v) { return !v.paid && v.amount; }).reduce(function(s, v) { return s + parseFloat(v.amount || 0); }, 0);
 
-  const toggleAction = function(id) { const next = Object.assign({}, completedActions, { [id]: !completedActions[id] }); setCompletedActions(next); db.set("completedActions", next); };
+  const toggleAction = function(id) { const next = Object.assign({}, completedActions, { [id]: !completedActions[id], _date: todayStr() }); setCompletedActions(next); db.set("completedActions", next); };
 
   const confirmDone = function(id) {
     const next = Object.assign({}, completedVisits, { [id]: true }); setCompletedVisits(next); db.set("completedVisits", next);
@@ -2084,7 +2149,7 @@ function TabToday({ onOpenPerson }) {
       <div style={{ padding: "20px 16px 12px" }}>
         <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 13, letterSpacing: 2, color: "var(--muted)", marginBottom: 4 }}>WALKS AND WHISKERS</div>
         <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 32, lineHeight: 1 }}>{greeting + ", Freddie 👋"}</div>
-        <div className="text-sm text-muted mt-4">{new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}</div>
+        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, color: "var(--purple)", marginTop: 6 }}>{new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}</div>
       </div>
 
       <div className="section-label">VISITS AND WALKS TODAY</div>
