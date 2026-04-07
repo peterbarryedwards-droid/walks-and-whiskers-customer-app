@@ -1,4 +1,4 @@
- import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback } from "react";
 
 const CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
@@ -154,7 +154,7 @@ const ENQUIRY_TYPES = [
 
 const FIELD_LABELS = {
   client_name: { label: "Client name",   icon: "👤" },
-  dog_name:    { label: "Dog name(s)",   icon: "🐕" },
+  dog_name:    { label: "Pet name(s)",   icon: "🐾" },
   service:     { label: "Service",       icon: "🦮" },
   dates:       { label: "Dates / times", icon: "📅" },
   location:    { label: "Location",      icon: "📍" },
@@ -175,33 +175,35 @@ const getPrices = () => db.get("prices") || DEFAULT_PRICES;
 const pricesText = () => getPrices().map(p => p.service + " (" + p.detail + "): " + (p.prefix || "") + "£" + p.price).join("\n");
 
 /* SYSTEM PROMPTS */
+const TONE = "Tone: warm and professional but concise. No small talk, no references to their personal plans or holidays, no filler phrases. Get to the point quickly.";
+
 const PROMPTS = {
-  new_client: (platform, prices) => `You help Freddie, a dog walker in Winchester, reply to new client enquiries.
-${(platform === "Direct" || platform === "Other") ? "Freddie's rates:\n" + prices : "Platform is " + platform + " — NEVER mention rates, the platform sets them."}
-Reply structure: 1) thank them 2) ask location if unknown 3) ask dates if unknown 4) ${(platform === "Direct" || platform === "Other") ? "mention relevant rate" : "do not mention rate"} 5) suggest meet and greet naturally 6) close warmly.
-Sign off as Freddie. British English.
-Format with exactly:
-DRAFT REPLY
-QUESTIONS TO ASK`,
+  new_client: (platform, prices, service) => {
+    const isCat = service && service.toLowerCase().includes("cat");
+    const petType = isCat ? "cat" : "dog";
+    const isDirect = platform === "Direct" || platform === "Other";
+    return "You help Freddie, a pet care professional in Winchester, reply to a new client enquiry.\n" +
+      (isDirect ? "Freddie rates:\n" + prices + "\n" : "Platform is " + platform + " — NEVER mention rates, the platform sets them.\n") +
+      TONE + "\n" +
+      "Reply structure: 1) thank them briefly 2) if location unknown ask for it 3) if dates unknown ask 4) " +
+      (isDirect ? "mention the relevant rate for their " + petType + " service clearly" : "do not mention rate") +
+      " 5) suggest a short meet and greet — write it naturally 6) close warmly.\n" +
+      "Sign off as Freddie. British English.\n" +
+      "Format with exactly:\nDRAFT REPLY\nQUESTIONS TO ASK";
+  },
 
-  existing_client: () => `You help Freddie reply to an existing client. Skip introductions and meet and greet. Warm and efficient. Sign off as Freddie. British English.
-Format with exactly:
-DRAFT REPLY`,
+  existing_client: () => "You help Freddie reply to an existing client. Skip introductions and meet and greet suggestions. " + TONE + " Sign off as Freddie. British English.\nFormat with exactly:\nDRAFT REPLY",
 
-  quote: (platform) => `You help Freddie respond to a price enquiry. ${(platform === "Direct" || platform === "Other") ? "State rates clearly." : "Platform is " + platform + " — NEVER mention rates."} Sign off as Freddie. British English.
-Format with exactly:
-DRAFT REPLY
-WHAT TO MENTION`,
+  quote: (platform, prices) => {
+    const isDirect = platform === "Direct" || platform === "Other";
+    return "You help Freddie respond to a price enquiry.\n" +
+      (isDirect ? "Freddie rates:\n" + prices + "\nState the relevant rates clearly and confidently. Do not apologise for the price.\n" : "Platform is " + platform + " — NEVER mention rates, the platform sets them.\n") +
+      TONE + "\nSign off as Freddie. British English.\nFormat with exactly:\nDRAFT REPLY\nWHAT TO MENTION";
+  },
 
-  confirm: () => `You help Freddie send a general response. Warm and helpful. Sign off as Freddie. British English.
-Format with exactly:
-DRAFT REPLY
-MISSING INFO TO GET`,
+  confirm: () => "You help Freddie send a general response. " + TONE + " Sign off as Freddie. British English.\nFormat with exactly:\nDRAFT REPLY\nMISSING INFO TO GET",
 
-  decline: () => `You help Freddie politely decline a job. Kind and brief. Sign off as Freddie. British English.
-Format with exactly:
-DRAFT REPLY
-ONE TIP`,
+  decline: () => "You help Freddie politely decline a job. Kind and brief — do not burn bridges. " + TONE + " Sign off as Freddie. British English.\nFormat with exactly:\nDRAFT REPLY\nONE TIP",
 };
 
 /* AI */
@@ -260,19 +262,34 @@ function computeActions(people) {
   for (const p of people) {
     if (p.stage === "not_proceeding") continue;
     const msgs = p.messages || [];
-    const lastOut = [...msgs].reverse().find(m => m.role === "freddie");
-    const lastIn  = [...msgs].reverse().find(m => m.role === "client");
+    const lastOut = [...msgs].reverse().find(function(m) { return m.role === "freddie"; });
+    const lastIn  = [...msgs].reverse().find(function(m) { return m.role === "client"; });
     const unreplied = lastIn && (!lastOut || lastIn.date > lastOut.date);
     if (unreplied) {
       const elapsed = Date.now() - new Date(lastIn.date).getTime();
       if (elapsed > MS_PER_HOUR * 12) actions.push({ personId: p.id, type: "reply", label: "Reply to " + (p.name || "someone"), urgency: "high", stage: p.stage });
     }
     const age = daysSince(p.lastActionDate || p.createdAt);
-    if (p.stage === "new_enquiry") actions.push({ personId: p.id, type: "reply_new", label: "Reply to " + (p.name || "new enquiry"), urgency: "high", stage: p.stage });
-    if (p.stage === "replied" && age >= 1) actions.push({ personId: p.id, type: "chase", label: "Chase " + p.name + " — no reply for " + age + "d", urgency: "medium", stage: p.stage });
-    if (p.stage === "interested" && age >= 1) actions.push({ personId: p.id, type: "arrange_meet", label: "Arrange meet with " + p.name, urgency: "medium", stage: p.stage });
-    if (p.stage === "meet_arranged" && age >= 2) actions.push({ personId: p.id, type: "chase", label: "Chase " + p.name + " — meet booked but gone quiet", urgency: "medium", stage: p.stage });
-    if (p.stage === "met" && age >= 1) actions.push({ personId: p.id, type: "chase_booking", label: "Follow up " + p.name + " — met but no booking yet", urgency: "medium", stage: p.stage });
+    if (p.stage === "new_enquiry") {
+      actions.push({ personId: p.id, type: "reply_new", label: "Reply to " + (p.name || "new enquiry"), urgency: "high", stage: p.stage });
+    }
+    if (p.stage === "replied" && age >= 1) {
+      actions.push({ personId: p.id, type: "chase", label: "Chase " + p.name + " — no reply for " + age + "d", urgency: "medium", stage: p.stage });
+    }
+    // After they show interest — prompt to arrange meet FIRST, not booking
+    if (p.stage === "interested" && age >= 1) {
+      actions.push({ personId: p.id, type: "arrange_meet", label: "Arrange meet and greet with " + p.name, urgency: "medium", stage: p.stage });
+    }
+    if (p.stage === "meet_arranged" && age >= 2) {
+      actions.push({ personId: p.id, type: "chase_meet", label: "Chase " + p.name + " — meet booked, gone quiet", urgency: "medium", stage: p.stage });
+    }
+    // Only prompt for booking AFTER the meet has happened
+    if (p.stage === "met" && age >= 1) {
+      actions.push({ personId: p.id, type: "confirm_booking", label: "Confirm booking with " + p.name + " — met, no booking yet", urgency: "medium", stage: p.stage });
+    }
+    if (p.stage === "gone_quiet" && age >= 3) {
+      actions.push({ personId: p.id, type: "re_engage", label: "Re-engage " + p.name + " — gone quiet", urgency: "low", stage: p.stage });
+    }
   }
   return actions;
 }
@@ -380,6 +397,7 @@ function MessagingFlow({ person, onBack, onPersonUpdated }) {
   const [tweakInput, setTweakInput] = useState("");
   const [tweaking, setTweaking] = useState(false);
   const [followUpMsg, setFollowUpMsg] = useState("");
+  const [manualMsg, setManualMsg] = useState("");
   const [toast, setToast] = useState(null);
   const [intent, setIntent] = useState(null);
   const [bookingForm, setBookingForm] = useState(null);
@@ -390,6 +408,15 @@ function MessagingFlow({ person, onBack, onPersonUpdated }) {
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
   const typeColor = (enquiryType && enquiryType.color) || "#6c5ce7";
+
+  const logManualReply = () => {
+    if (!manualMsg.trim() || !currentPerson) return;
+    const freddieMsg = { role: "freddie", manual: manualMsg.trim(), draft: manualMsg.trim(), date: nowStr() };
+    const msgs = (currentPerson.messages || []);
+    savePerson({ messages: msgs.concat([freddieMsg]), lastActionDate: nowStr(), stage: currentPerson.stage === "new_enquiry" ? "replied" : currentPerson.stage });
+    setManualMsg("");
+    showToast("Reply logged ✓");
+  };
 
   const savePerson = (updates) => {
     const people = db.getAll("people");
@@ -486,13 +513,16 @@ function MessagingFlow({ person, onBack, onPersonUpdated }) {
     if (!rawMessage.trim()) return;
     setScreen("analysing");
     const isExisting = enquiryType && enquiryType.id === "existing_client";
-    const prompt = "You are helping Freddie, a dog walker, analyse an enquiry on " + platform + ".\n" +
+    const prompt = "You are helping Freddie, a pet care professional, analyse an enquiry on " + platform + ".\n" +
       "Enquiry type: " + (enquiryType && enquiryType.label) + "\nMessage: \"\"\"" + rawMessage + "\"\"\"\n\n" +
       "Extract all visible info. Identify what is genuinely missing.\n" +
+      "For the service field, be specific: dog_walk, cat_visit, dog_drop_in, home_sit, stay_over — detect from context.\n" +
       "Reply with ONLY valid JSON:\n" +
       "{\"extracted\":{\"client_name\":null,\"dog_name\":null,\"service\":null,\"dates\":null,\"location\":null,\"rate\":null,\"recurring\":null,\"notes\":null}," +
       "\"questions\":[{\"field\":\"field_name\",\"question\":\"friendly question\",\"hint\":\"short hint\",\"required\":true}]}\n" +
       "Rules:\n- Only ask about genuinely missing fields\n" +
+      "- dog_name field is used for ALL pets (dogs and cats) — if service appears to be cat-related, ask for the cat name\n" +
+      "- if service is cat-related label the question as 'cat name' not 'dog name'\n" +
       "- dog_name: if missing hint is Check the " + platform + " profile or type skip, required false\n" +
       "- location: if missing required true\n" +
       "- rate: ONLY ask if platform is Direct or Other, NEVER for Rover or Bark\n" +
@@ -512,12 +542,13 @@ function MessagingFlow({ person, onBack, onPersonUpdated }) {
     const allData = Object.assign({}, extracted, finalAnswers);
     const context = Object.entries(allData).filter(function(e) { return e[1] && e[1] !== "null"; }).map(function(e) { return e[0] + ": " + e[1]; }).join("\n");
     const msgs = (currentPerson && currentPerson.messages) || [];
-    const history = msgs.map(function(m) { return (m.role === "client" ? "Client" : "Freddie") + ": " + (m.text || m.draft); }).join("\n\n");
+    const history = msgs.map(function(m) { return (m.role === "client" ? "Client" : "Freddie") + ": " + (m.text || m.draft || m.manual); }).join("\n\n");
     const et = (enquiryType && enquiryType.id) || "new_client";
+    const service = allData.service || (currentPerson && currentPerson.serviceType) || "";
     let systemPrompt = "";
-    if (et === "new_client") systemPrompt = PROMPTS.new_client(platform, pricesText());
+    if (et === "new_client") systemPrompt = PROMPTS.new_client(platform, pricesText(), service);
     else if (et === "existing_client") systemPrompt = PROMPTS.existing_client();
-    else if (et === "quote") systemPrompt = PROMPTS.quote(platform);
+    else if (et === "quote") systemPrompt = PROMPTS.quote(platform, pricesText());
     else if (et === "confirm") systemPrompt = PROMPTS.confirm();
     else systemPrompt = PROMPTS.decline();
     const prompt = systemPrompt + "\n\nPlatform: " + platform + "\nOriginal message: " + rawMessage + (history ? "\n\nConversation so far:\n" + history : "") + "\n\nKnown information:\n" + (context || "(none)");
@@ -544,7 +575,7 @@ function MessagingFlow({ person, onBack, onPersonUpdated }) {
     if (!followUpMsg.trim() || !currentPerson) return;
     setScreen("loading");
     const msgs = currentPerson.messages || [];
-    const history = msgs.map(function(m) { return (m.role === "client" ? "Client" : "Freddie") + ": " + (m.text || m.draft); }).join("\n\n");
+    const history = msgs.map(function(m) { return (m.role === "client" ? "Client" : "Freddie") + ": " + (m.text || m.draft || m.manual); }).join("\n\n");
     const known = Object.entries(currentPerson.extracted || {}).filter(function(e) { return e[1] && e[1] !== "null"; }).map(function(e) { return e[0] + ": " + e[1]; }).join("\n");
     const prompt = "You help Freddie, a dog walker, reply to a follow-up message.\nConversation:\n" + history + "\nClient latest message: \"" + followUpMsg + "\"\nKnown:\n" + (known || "(not much yet)") + "\nWarm, natural reply. Don't re-introduce. Sign off as Freddie. British English.\nFormat with:\nDRAFT REPLY\nONE TIP";
     const intentPrompt = "Read this client message and return JSON only:\nMessage: \"" + followUpMsg + "\"\nConversation: \"" + history + "\"\nReturn: {\"suggested_stage\":\"new_enquiry|replied|interested|meet_arranged|met|active|gone_quiet\",\"booking_detected\":true or false,\"meet_detected\":true or false,\"booking_summary\":\"brief summary or null\"}";
@@ -639,16 +670,18 @@ function MessagingFlow({ person, onBack, onPersonUpdated }) {
               <div className="section-label mt-16">CONVERSATION</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 {msgs.map(function(msg, i) {
+                  const isManual = msg.manual;
                   return (
                     <div key={i}>
                       <div style={{ fontSize: 11, color: "var(--muted2)", marginBottom: 5, textAlign: msg.role === "freddie" ? "right" : "left" }}>
                         {msg.role === "client" ? ((currentPerson && currentPerson.name) || "Client") : "Freddie"} · {fmtDate(msg.date)}
+                        {isManual && <span style={{ color: "var(--muted2)", fontStyle: "italic" }}> · logged manually</span>}
                       </div>
                       {msg.role === "client" ? (
                         <div className="bubble-in">{msg.text}</div>
                       ) : (
                         <div>
-                          <div className="bubble-out" style={{ whiteSpace: "pre-wrap" }}>{msg.draft || msg.text}</div>
+                          <div className="bubble-out" style={{ whiteSpace: "pre-wrap", opacity: isManual ? 0.8 : 1 }}>{msg.draft || msg.text || msg.manual}</div>
                           {msg.questions && (
                             <div className="double-check-box" style={{ marginLeft: "auto", maxWidth: "82%" }}>
                               <div style={{ fontSize: 11, color: "var(--green)", fontWeight: 700, textTransform: "uppercase", marginBottom: 5 }}>✅ Double check you have asked</div>
@@ -669,6 +702,13 @@ function MessagingFlow({ person, onBack, onPersonUpdated }) {
             <div className="text-sm text-muted mb-8">Paste their reply — I will draft a response using full context.</div>
             <textarea className="input" rows={4} value={followUpMsg} onChange={function(e) { setFollowUpMsg(e.target.value); }} placeholder="Paste their latest message here..." />
             <button className="btn btn-primary mt-8" disabled={!followUpMsg.trim()} style={{ opacity: followUpMsg.trim() ? 1 : 0.4 }} onClick={generateFollowUp}>Generate Follow-up ✨</button>
+          </div>
+
+          <div className="card mt-12" style={{ marginLeft: 0, marginRight: 0, background: "rgba(108,92,231,0.06)", borderColor: "rgba(108,92,231,0.2)" }}>
+            <div className="section-label" style={{ paddingLeft: 0, marginTop: 0, color: "var(--purple)" }}>LOG A REPLY I SENT</div>
+            <div className="text-sm text-muted mb-8">Already replied outside the app? Paste it here so the AI has the full picture.</div>
+            <textarea className="input" rows={3} value={manualMsg} onChange={function(e) { setManualMsg(e.target.value); }} placeholder="Paste the message you sent..." />
+            <button className="btn btn-ghost mt-8" disabled={!manualMsg.trim()} style={{ opacity: manualMsg.trim() ? 1 : 0.4, borderColor: "rgba(108,92,231,0.4)", color: "var(--purple)" }} onClick={logManualReply}>Log Reply</button>
           </div>
 
           <div className="section-label mt-16">NEW MESSAGE TYPE</div>
