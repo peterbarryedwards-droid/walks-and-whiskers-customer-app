@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+ import { useState, useRef, useCallback } from "react";
 
 const CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
@@ -362,9 +362,12 @@ function CheckBox({ done, onToggle }) {
 
 /* MESSAGING FLOW */
 function MessagingFlow({ person, onBack, onPersonUpdated }) {
-  const initScreen = (person && person.messages && person.messages.length > 0) ? "thread" : "type";
+  const hasMessages = person && person.messages && person.messages.length > 0;
+  const isExisting = person && person.stage === "active";
+  const initScreen = hasMessages ? "thread" : "type";
+  const initEnquiryType = isExisting && !hasMessages ? ENQUIRY_TYPES.find(function(t) { return t.id === "existing_client"; }) : null;
   const [screen, setScreen] = useState(initScreen);
-  const [enquiryType, setEnquiryType] = useState(null);
+  const [enquiryType, setEnquiryType] = useState(initEnquiryType);
   const [platform, setPlatform] = useState((person && person.platform) || "Rover");
   const [rawMessage, setRawMessage] = useState("");
   const [extracted, setExtracted] = useState({});
@@ -417,15 +420,36 @@ function MessagingFlow({ person, onBack, onPersonUpdated }) {
     setEditingField(null);
   };
 
-  const openBookingForm = (isMeet) => {
+  const openBookingForm = async (isMeet) => {
     const ext = (currentPerson && currentPerson.extracted) || {};
-    const datesHint = isMeet ? null : (ext.dates && ext.dates !== "null" ? ext.dates : null);
-    const bulk = datesHint ? parseBulkDates(datesHint) : [];
-    if (bulk.length > 1) {
-      setBookingForm({ bulk: true, bulkDates: bulk.map(d => Object.assign({}, d, { selected: true })), serviceType: (currentPerson && currentPerson.serviceType) || "dog_walk", duration: "30 min", isMeet: false, datesHint });
-    } else {
-      const single = bulk[0] || {};
-      setBookingForm({ date: single.date || "", time: single.time || "", serviceType: (currentPerson && currentPerson.serviceType) || "dog_walk", duration: "30 min", isMeet, datesHint: isMeet ? null : datesHint });
+    const datesRaw = isMeet ? null : (ext.dates && ext.dates !== "null" ? ext.dates : null);
+
+    if (!datesRaw && !isMeet) {
+      setBookingForm({ date: "", time: "", serviceType: (currentPerson && currentPerson.serviceType) || "dog_walk", duration: "30 min", isMeet: false, datesHint: null });
+      return;
+    }
+    if (isMeet) {
+      setBookingForm({ date: "", time: "", serviceType: "dog_walk", duration: "30 min", isMeet: true, datesHint: null });
+      return;
+    }
+
+    // Use AI to parse dates properly
+    setBookingForm({ loading: true });
+    try {
+      const today = new Date();
+      const aiPrompt = "Convert these dates and times to structured JSON. Today is " + today.toDateString() + ".\n\nText: \"" + datesRaw + "\"\n\nReturn ONLY valid JSON:\n{\"dates\":[{\"date\":\"YYYY-MM-DD\",\"time\":\"HH:MM or empty string\"}]}\n\nRules:\n- Use the next upcoming occurrence if day name only (e.g. next Tuesday)\n- If multiple times given for same date, create one entry per time\n- If year not specified use " + today.getFullYear() + "\n- dates array can be empty if nothing parseable";
+      const result = await callClaudeJSON(aiPrompt);
+      const parsed = (result.dates || []).filter(function(d) { return d.date; });
+
+      if (parsed.length > 1) {
+        setBookingForm({ bulk: true, bulkDates: parsed.map(function(d) { return Object.assign({}, d, { selected: true }); }), serviceType: (currentPerson && currentPerson.serviceType) || "dog_walk", duration: "30 min", isMeet: false, datesHint: datesRaw });
+      } else if (parsed.length === 1) {
+        setBookingForm({ date: parsed[0].date, time: parsed[0].time || "", serviceType: (currentPerson && currentPerson.serviceType) || "dog_walk", duration: "30 min", isMeet: false, datesHint: datesRaw });
+      } else {
+        setBookingForm({ date: "", time: "", serviceType: (currentPerson && currentPerson.serviceType) || "dog_walk", duration: "30 min", isMeet: false, datesHint: datesRaw });
+      }
+    } catch {
+      setBookingForm({ date: "", time: "", serviceType: (currentPerson && currentPerson.serviceType) || "dog_walk", duration: "30 min", isMeet: false, datesHint: datesRaw });
     }
   };
 
@@ -880,7 +904,13 @@ function MessagingFlow({ person, onBack, onPersonUpdated }) {
             </div>
           )}
 
-          {bookingForm && (
+          {bookingForm && bookingForm.loading && (
+            <div style={{ background: "var(--card2)", border: "1px solid var(--border2)", borderRadius: "var(--radius-sm)", padding: "14px", marginBottom: 14 }}>
+              <div className="row"><Spinner /><span className="text-sm text-muted" style={{ marginLeft: 10 }}>Parsing dates...</span></div>
+            </div>
+          )}
+
+          {bookingForm && !bookingForm.loading && (
             <div style={{ background: "var(--card2)", border: "1px solid var(--border2)", borderRadius: "var(--radius-sm)", padding: "13px", marginBottom: 14 }}>
               <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 8 }}>
                 {bookingForm.isMeet ? "📅 Meet and Greet" : bookingForm.bulk ? ("📅 " + bookingForm.bulkDates.filter(function(d) { return d.selected; }).length + " visits found") : "📅 Booking"}
@@ -1384,7 +1414,6 @@ function PersonDetail({ personId, onBack, onUpdate }) {
   const [selectedDog, setSelectedDog] = useState(null);
   const [selectedCat, setSelectedCat] = useState(null);
   const [showMoveStage, setShowMoveStage] = useState(false);
-  const [showMessage, setShowMessage] = useState(false);
   const [tick, setTick] = useState(0);
 
   const person = db.getAll("people").find(function(p) { return p.id === personId; });
@@ -1418,7 +1447,6 @@ function PersonDetail({ personId, onBack, onUpdate }) {
     onBack();
   };
 
-  if (showMessage) return <MessagingFlow person={person} onBack={function() { setShowMessage(false); refresh(); }} onPersonUpdated={refresh} />;
   if (selectedDog) return <DogWizard personId={personId} existingDog={selectedDog} onSave={function() { setSelectedDog(null); refresh(); }} onBack={function() { setSelectedDog(null); }} />;
   if (selectedCat) return <CatWizard personId={personId} existingCat={selectedCat} onSave={function() { setSelectedCat(null); refresh(); }} onBack={function() { setSelectedCat(null); }} />;
 
@@ -1449,7 +1477,7 @@ function PersonDetail({ personId, onBack, onUpdate }) {
       </div>
 
       <div className="btn-row">
-        <button className="btn btn-primary btn-sm" onClick={function() { setShowMessage(true); }}>💬 Message</button>
+        <button className="btn btn-primary btn-sm" onClick={function() { setActiveTab("messages"); }}>💬 Messages</button>
         <button className="btn btn-ghost btn-sm" onClick={function() { setShowMoveStage(true); }}>Stage</button>
         {person.stage !== "active" && <button className="btn btn-green btn-sm" onClick={function() { moveStage("active"); }}>Active ✓</button>}
       </div>
@@ -1668,13 +1696,27 @@ function TabCustomers({ onOpenPerson, onNewEnquiry, onAddClient }) {
   const [filter, setFilter] = useState("all");
   const [search, setSearch] = useState("");
   const STAGE_ORDER = { new_enquiry: 0, replied: 1, interested: 2, meet_arranged: 3, met: 4, active: 5, gone_quiet: 6, not_proceeding: 7 };
+
+  const SERVICE_FILTERS = [
+    { id: "all",       label: "All",         match: null },
+    { id: "dog_walk",  label: "Dog Walks",   match: ["dog_walk"] },
+    { id: "sitting",   label: "Sitting",     match: ["home_sit","stay_over","drop_in"] },
+    { id: "cat",       label: "Cats",        match: ["cat_visit"] },
+    { id: "enquiries", label: "Enquiries",   match: null, statusFilter: "enquiries" },
+    { id: "archived",  label: "Archived",    match: null, statusFilter: "not_proceeding" },
+  ];
+
   const people = db.getAll("people");
-  const counts = { all: people.length, active: people.filter(function(p) { return p.stage === "active"; }).length, enquiries: people.filter(function(p) { return p.stage !== "active" && p.stage !== "not_proceeding"; }).length, not_proceeding: people.filter(function(p) { return p.stage === "not_proceeding"; }).length };
+  const currentFilter = SERVICE_FILTERS.find(function(f) { return f.id === filter; }) || SERVICE_FILTERS[0];
+
   const filtered = people.filter(function(p) {
-    if (filter === "active") return p.stage === "active";
-    if (filter === "enquiries") return p.stage !== "active" && p.stage !== "not_proceeding";
-    if (filter === "not_proceeding") return p.stage === "not_proceeding";
-    return true;
+    if (currentFilter.statusFilter === "enquiries") return p.stage !== "active" && p.stage !== "not_proceeding";
+    if (currentFilter.statusFilter === "not_proceeding") return p.stage === "not_proceeding";
+    if (currentFilter.match) {
+      const svc = p.serviceType || (p.extracted && p.extracted.service) || "";
+      return currentFilter.match.some(function(m) { return svc.indexOf(m) !== -1; });
+    }
+    return p.stage !== "not_proceeding";
   }).filter(function(p) {
     if (!search) return true;
     const s = search.toLowerCase();
@@ -1699,28 +1741,38 @@ function TabCustomers({ onOpenPerson, onNewEnquiry, onAddClient }) {
         <input className="input" placeholder="Search..." value={search} onChange={function(e) { setSearch(e.target.value); }} />
       </div>
       <div className="pill-tabs mb-12">
-        {[["all","All (" + counts.all + ")"],["active","Active (" + counts.active + ")"],["enquiries","Enquiries (" + counts.enquiries + ")"],["not_proceeding","Not proceeding"]].map(function(f) {
-          return <button key={f[0]} className={"pill-tab" + (filter === f[0] ? " active" : "")} onClick={function() { setFilter(f[0]); }}>{f[1]}</button>;
+        {SERVICE_FILTERS.map(function(f) {
+          const count = people.filter(function(p) {
+            if (f.statusFilter === "enquiries") return p.stage !== "active" && p.stage !== "not_proceeding";
+            if (f.statusFilter === "not_proceeding") return p.stage === "not_proceeding";
+            if (f.match) { const svc = p.serviceType || (p.extracted && p.extracted.service) || ""; return f.match.some(function(m) { return svc.indexOf(m) !== -1; }); }
+            return p.stage !== "not_proceeding";
+          }).length;
+          return <button key={f.id} className={"pill-tab" + (filter === f.id ? " active" : "")} onClick={function() { setFilter(f.id); }}>{f.label + " (" + count + ")"}</button>;
         })}
       </div>
       {filtered.length === 0 ? (
-        <div className="empty-state"><div className="icon">🐾</div><h3>Nobody here yet</h3><p>Tap New Message or Add Client to get started</p></div>
+        <div className="empty-state"><div className="icon">🐾</div><h3>Nobody here</h3><p>Tap New Message or Add Client to get started</p></div>
       ) : filtered.map(function(p) {
         const dogs = db.getAll("dogs").filter(function(d) { return d.personId === p.id; });
         const cats = db.getAll("cats").filter(function(c) { return c.personId === p.id; });
         const msgCount = (p.messages || []).length;
+        const svc = SERVICE_MAP[p.serviceType];
         return (
           <div key={p.id} className="card card-tap" onClick={function() { onOpenPerson(p.id); }}>
             <div className="row-between">
               <div className="flex-1">
-                <div style={{ fontWeight: 700, fontSize: 15 }}>{p.name || "Unknown"}</div>
+                <div className="row-between">
+                  <div style={{ fontWeight: 700, fontSize: 15 }}>{p.name || "Unknown"}</div>
+                  {svc && <span className="text-xs text-muted">{svc.icon + " " + svc.label}</span>}
+                </div>
                 <div className="row mt-4" style={{ gap: 6, flexWrap: "wrap" }}>
                   <StagePill stageId={p.stage} />
                   {p.platform && <span className="badge badge-muted">{p.platform}</span>}
                 </div>
                 <div className="text-sm text-muted mt-4">
                   {dogs.map(function(d) { return "🐕 " + d.name; }).join(" · ")}{cats.map(function(c) { return " 🐱 " + c.name; }).join(" · ")}
-                  {dogs.length === 0 && cats.length === 0 && ((p.extracted && p.extracted.dog_name) || (p.extracted && p.extracted.location) || "")}
+                  {dogs.length === 0 && cats.length === 0 && ((p.extracted && p.extracted.dog_name) || "")}
                 </div>
                 {msgCount > 0 && <div className="text-xs text-muted mt-4">{"💬 " + msgCount + " message" + (msgCount !== 1 ? "s" : "")}</div>}
               </div>
