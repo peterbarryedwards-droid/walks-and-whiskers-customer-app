@@ -400,9 +400,10 @@ function CheckBox({ done, onToggle }) {
 /* MESSAGING FLOW */
 function MessagingFlow({ person, onBack, onPersonUpdated, onEditMsg, onDeleteMsg, editingMsgIdx, editingMsgVal, onEditMsgChange, onSaveMsgEdit, onCancelMsgEdit }) {
   const hasMessages = person && person.messages && person.messages.length > 0;
-  const isExisting = person && person.stage === "active";
-  const initScreen = hasMessages ? "thread" : "type";
-  const initEnquiryType = isExisting && !hasMessages ? ENQUIRY_TYPES.find(function(t) { return t.id === "existing_client"; }) : null;
+  const existingClient = !!person; // any person opened from customer record
+  // Existing client with messages → thread. Existing client no messages → paste. New enquiry → type.
+  const initScreen = hasMessages ? "thread" : existingClient ? "paste" : "type";
+  const initEnquiryType = existingClient ? ENQUIRY_TYPES.find(function(t) { return t.id === "existing_client"; }) : null;
   const [screen, setScreen] = useState(initScreen);
   const [enquiryType, setEnquiryType] = useState(initEnquiryType);
   const [platform, setPlatform] = useState((person && person.platform) || "Rover");
@@ -1520,12 +1521,49 @@ function NotesTab({ person, onUpdate }) {
   const [pasteText, setPasteText] = useState("");
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState(null);
+  const [editingField, setEditingField] = useState(null);
+  const [editingVal, setEditingVal] = useState("");
+  const [editingNoteId, setEditingNoteId] = useState(null);
+  const [editingNoteVal, setEditingNoteVal] = useState("");
+
   const showToast = function(msg) { setToast(msg); setTimeout(function() { setToast(null); }, 3000); };
 
   const profileNotes = person.profileNotes || [];
   const jobNotes = person.jobNotes || "";
   const schedule = person.schedule || "";
   const houseNotes = person.houseNotes || "";
+
+  const saveField = function(field, val) {
+    const all = db.getAll("people");
+    const idx = all.findIndex(function(p) { return p.id === person.id; });
+    if (idx >= 0) { all[idx][field] = val; db.set("people", all); }
+    setEditingField(null);
+    if (onUpdate) onUpdate();
+  };
+
+  const saveNoteEdit = function(noteId) {
+    const all = db.getAll("people");
+    const idx = all.findIndex(function(p) { return p.id === person.id; });
+    if (idx >= 0) {
+      all[idx].profileNotes = (all[idx].profileNotes || []).map(function(n) {
+        return n.id === noteId ? Object.assign({}, n, { text: editingNoteVal }) : n;
+      });
+      db.set("people", all);
+    }
+    setEditingNoteId(null);
+    if (onUpdate) onUpdate();
+  };
+
+  const deleteNote = function(noteId) {
+    if (!window.confirm("Delete this note?")) return;
+    const all = db.getAll("people");
+    const idx = all.findIndex(function(p) { return p.id === person.id; });
+    if (idx >= 0) {
+      all[idx].profileNotes = (all[idx].profileNotes || []).filter(function(n) { return n.id !== noteId; });
+      db.set("people", all);
+    }
+    if (onUpdate) onUpdate();
+  };
 
   const addFromPaste = async function() {
     if (!pasteText.trim()) return;
@@ -1558,7 +1596,6 @@ function NotesTab({ person, onUpdate }) {
         const newNote = { id: uid(), date: nowStr(), text: pasteText, extracted: result.general || null, source: "manual" };
         all[idx].profileNotes = (all[idx].profileNotes || []).concat([newNote]);
         db.set("people", all);
-        // Update pet fields if any
         if (result.pet_updates && result.pet_updates.length > 0) {
           const allDogs = db.getAll("dogs");
           result.pet_updates.forEach(function(upd) {
@@ -1575,12 +1612,35 @@ function NotesTab({ person, onUpdate }) {
     setLoading(false);
   };
 
-  const InfoRow = function(props) {
-    if (!props.value) return null;
+  // Editable field row
+  const EditField = function(props) {
+    const isEditing = editingField === props.field;
+    if (isEditing) {
+      return (
+        <div className="mt-8">
+          <div className="text-xs text-muted mb-4">{props.label}</div>
+          <textarea className="input" rows={3} value={editingVal} onChange={function(e) { setEditingVal(e.target.value); }} autoFocus style={{ fontSize: 13 }} />
+          <div className="btn-row mt-6" style={{ padding: 0 }}>
+            <button className="btn btn-ghost btn-sm" onClick={function() { setEditingField(null); }}>Cancel</button>
+            <button className="btn btn-green btn-sm" onClick={function() { saveField(props.field, editingVal); }}>Save ✓</button>
+          </div>
+        </div>
+      );
+    }
     return (
-      <div className="row mt-4">
-        <span style={{ fontSize: 14, minWidth: 22 }}>{props.icon}</span>
-        <div><div className="text-xs text-muted">{props.label}</div><div className="text-sm" style={{ lineHeight: 1.5 }}>{props.value}</div></div>
+      <div className="mt-8" style={{ cursor: "pointer" }} onClick={function() { setEditingField(props.field); setEditingVal(props.value || ""); }}>
+        <div className="row-between">
+          <div className="row" style={{ gap: 6 }}>
+            <span style={{ fontSize: 14 }}>{props.icon}</span>
+            <div className="text-xs text-muted" style={{ fontWeight: 700, textTransform: "uppercase" }}>{props.label}</div>
+          </div>
+          <span style={{ fontSize: 11, color: "var(--muted2)" }}>✏️</span>
+        </div>
+        {props.value ? (
+          <div className="text-sm mt-4" style={{ lineHeight: 1.6 }}>{props.value}</div>
+        ) : (
+          <div className="text-sm text-muted mt-4" style={{ fontStyle: "italic" }}>Tap to add...</div>
+        )}
       </div>
     );
   };
@@ -1595,26 +1655,39 @@ function NotesTab({ person, onUpdate }) {
             <button className="btn btn-primary" onClick={function() { setPasteMode(true); }}>+ Add from Notes</button>
           </div>
 
-          {hasStructured && (
-            <div>
-              <div className="section-label">Job Details</div>
-              <div className="card">
-                <InfoRow icon="🔑" label="Access" value={person.accessNotes} />
-                <InfoRow icon="📋" label="Job notes" value={jobNotes} />
-                <InfoRow icon="🗓️" label="Schedule" value={schedule} />
-                <InfoRow icon="🏡" label="House notes" value={houseNotes} />
-              </div>
-            </div>
-          )}
+          <div className="section-label">Job Details</div>
+          <div className="card">
+            <EditField icon="🔑" label="Access notes" field="accessNotes" value={person.accessNotes} />
+            <EditField icon="📋" label="Job notes" field="jobNotes" value={jobNotes} />
+            <EditField icon="🗓️" label="Schedule" field="schedule" value={schedule} />
+            <EditField icon="🏡" label="House notes" field="houseNotes" value={houseNotes} />
+          </div>
 
           {profileNotes.length > 0 && (
             <div>
               <div className="section-label">Raw Notes</div>
               {profileNotes.map(function(note) {
+                const isEditingNote = editingNoteId === note.id;
                 return (
                   <div key={note.id} className="card card-sm">
-                    <div className="text-xs text-muted mb-4">{fmtDate(note.date)} · {note.source === "add_client" ? "Initial entry" : "Added manually"}</div>
-                    <div className="text-sm" style={{ lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{note.text.length > 300 ? note.text.slice(0, 300) + "..." : note.text}</div>
+                    <div className="row-between mb-4">
+                      <div className="text-xs text-muted">{fmtDate(note.date)} · {note.source === "add_client" ? "Initial entry" : "Added"}</div>
+                      <div className="row" style={{ gap: 8 }}>
+                        <button style={{ background: "none", border: "none", color: "var(--muted2)", cursor: "pointer", fontSize: 12 }} onClick={function() { setEditingNoteId(note.id); setEditingNoteVal(note.text); }}>✏️</button>
+                        <button style={{ background: "none", border: "none", color: "var(--red)", cursor: "pointer", fontSize: 12, opacity: 0.7 }} onClick={function() { deleteNote(note.id); }}>✕</button>
+                      </div>
+                    </div>
+                    {isEditingNote ? (
+                      <div>
+                        <textarea className="input" rows={6} value={editingNoteVal} onChange={function(e) { setEditingNoteVal(e.target.value); }} autoFocus style={{ fontSize: 13 }} />
+                        <div className="btn-row mt-6" style={{ padding: 0 }}>
+                          <button className="btn btn-ghost btn-sm" onClick={function() { setEditingNoteId(null); }}>Cancel</button>
+                          <button className="btn btn-green btn-sm" onClick={function() { saveNoteEdit(note.id); }}>Save ✓</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-sm" style={{ lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{note.text.length > 400 ? note.text.slice(0, 400) + "..." : note.text}</div>
+                    )}
                   </div>
                 );
               })}
