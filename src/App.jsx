@@ -259,6 +259,8 @@ function parseSections(text) {
 /* CHASE LOGIC */
 function computeActions(people) {
   const actions = [];
+  const allVisits = db.getAll("visits");
+
   for (const p of people) {
     if (p.stage === "not_proceeding") continue;
     const msgs = p.messages || [];
@@ -276,19 +278,37 @@ function computeActions(people) {
     if (p.stage === "replied" && age >= 1) {
       actions.push({ personId: p.id, type: "chase", label: "Chase " + p.name + " — no reply for " + age + "d", urgency: "medium", stage: p.stage });
     }
-    // After they show interest — prompt to arrange meet FIRST, not booking
     if (p.stage === "interested" && age >= 1) {
       actions.push({ personId: p.id, type: "arrange_meet", label: "Arrange meet and greet with " + p.name, urgency: "medium", stage: p.stage });
     }
     if (p.stage === "meet_arranged" && age >= 2) {
       actions.push({ personId: p.id, type: "chase_meet", label: "Chase " + p.name + " — meet booked, gone quiet", urgency: "medium", stage: p.stage });
     }
-    // Only prompt for booking AFTER the meet has happened
     if (p.stage === "met" && age >= 1) {
       actions.push({ personId: p.id, type: "confirm_booking", label: "Confirm booking with " + p.name + " — met, no booking yet", urgency: "medium", stage: p.stage });
     }
     if (p.stage === "gone_quiet" && age >= 3) {
       actions.push({ personId: p.id, type: "re_engage", label: "Re-engage " + p.name + " — gone quiet", urgency: "low", stage: p.stage });
+    }
+
+    // Belt and braces: scan last few messages for booking/meet confirmation not yet in calendar
+    const personVisits = allVisits.filter(function(v) { return v.personId === p.id; });
+    const lastClientMsg = lastIn ? (lastIn.text || "").toLowerCase() : "";
+    const lastFreddieMsg = lastOut ? (lastOut.draft || lastOut.manual || lastOut.text || "").toLowerCase() : "";
+    const combinedRecent = lastClientMsg + " " + lastFreddieMsg;
+    const hasBookingKeywords = combinedRecent.indexOf("happy to book") !== -1 || combinedRecent.indexOf("go ahead") !== -1 || combinedRecent.indexOf("confirmed") !== -1 || combinedRecent.indexOf("all booked") !== -1 || combinedRecent.indexOf("see you on") !== -1 || combinedRecent.indexOf("see you at") !== -1;
+    const hasMeetKeywords = combinedRecent.indexOf("meet and greet") !== -1 || combinedRecent.indexOf("meet up") !== -1 || combinedRecent.indexOf("come and meet") !== -1 || combinedRecent.indexOf("pop over") !== -1;
+    const hasNoUpcomingBooking = !personVisits.some(function(v) { return !v.isMeetGreet && v.date >= todayStr(); });
+    const hasNoMeet = !personVisits.some(function(v) { return v.isMeetGreet; });
+    if (hasBookingKeywords && hasNoUpcomingBooking && p.stage !== "new_enquiry") {
+      if (!actions.find(function(a) { return a.personId === p.id && a.type === "confirm_booking"; })) {
+        actions.push({ personId: p.id, type: "add_booking", label: "Add booking for " + p.name + " — looks confirmed", urgency: "high", stage: p.stage });
+      }
+    }
+    if (hasMeetKeywords && hasNoMeet && p.stage !== "active") {
+      if (!actions.find(function(a) { return a.personId === p.id && (a.type === "arrange_meet" || a.type === "add_meet"); })) {
+        actions.push({ personId: p.id, type: "add_meet", label: "Add meet and greet for " + p.name + " to calendar", urgency: "medium", stage: p.stage });
+      }
     }
   }
   return actions;
@@ -378,7 +398,7 @@ function CheckBox({ done, onToggle }) {
 }
 
 /* MESSAGING FLOW */
-function MessagingFlow({ person, onBack, onPersonUpdated }) {
+function MessagingFlow({ person, onBack, onPersonUpdated, onEditMsg, onDeleteMsg, editingMsgIdx, editingMsgVal, onEditMsgChange, onSaveMsgEdit, onCancelMsgEdit }) {
   const hasMessages = person && person.messages && person.messages.length > 0;
   const isExisting = person && person.stage === "active";
   const initScreen = hasMessages ? "thread" : "type";
@@ -698,17 +718,39 @@ function MessagingFlow({ person, onBack, onPersonUpdated }) {
               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                 {msgs.map(function(msg, i) {
                   const isManual = msg.manual;
+                  const isEditingThis = editingMsgIdx === i;
+                  const msgText = msg.draft || msg.text || msg.manual || "";
                   return (
                     <div key={i}>
-                      <div style={{ fontSize: 11, color: "var(--muted2)", marginBottom: 5, textAlign: msg.role === "freddie" ? "right" : "left" }}>
-                        {msg.role === "client" ? ((currentPerson && currentPerson.name) || "Client") : "Freddie"} · {fmtDate(msg.date)}
-                        {isManual && <span style={{ color: "var(--muted2)", fontStyle: "italic" }}> · logged manually</span>}
+                      <div style={{ fontSize: 11, color: "var(--muted2)", marginBottom: 5, textAlign: msg.role === "freddie" ? "right" : "left", display: "flex", justifyContent: msg.role === "freddie" ? "flex-end" : "flex-start", alignItems: "center", gap: 8 }}>
+                        {msg.role === "client" && (
+                          <div style={{ display: "flex", gap: 4 }}>
+                            <button style={{ background: "none", border: "none", color: "var(--muted2)", cursor: "pointer", fontSize: 11 }} onClick={function() { if (onEditMsg) onEditMsg(i, msg.text || ""); }}>✏️</button>
+                            <button style={{ background: "none", border: "none", color: "var(--red)", cursor: "pointer", fontSize: 11, opacity: 0.6 }} onClick={function() { if (onDeleteMsg) onDeleteMsg(i); }}>✕</button>
+                          </div>
+                        )}
+                        <span>{msg.role === "client" ? ((currentPerson && currentPerson.name) || "Client") : "Freddie"} · {fmtDate(msg.date)}{isManual ? " · logged" : ""}</span>
+                        {msg.role === "freddie" && (
+                          <div style={{ display: "flex", gap: 4 }}>
+                            <button style={{ background: "none", border: "none", color: "var(--muted2)", cursor: "pointer", fontSize: 11 }} onClick={function() { if (onEditMsg) onEditMsg(i, msg.draft || msg.text || msg.manual || ""); }}>✏️</button>
+                            <button style={{ background: "none", border: "none", color: "var(--red)", cursor: "pointer", fontSize: 11, opacity: 0.6 }} onClick={function() { if (onDeleteMsg) onDeleteMsg(i); }}>✕</button>
+                          </div>
+                        )}
                       </div>
-                      {msg.role === "client" ? (
+
+                      {isEditingThis ? (
+                        <div>
+                          <textarea className="input" rows={4} value={editingMsgVal} onChange={function(e) { if (onEditMsgChange) onEditMsgChange(e.target.value); }} style={{ fontSize: 13 }} />
+                          <div className="btn-row mt-4" style={{ padding: 0 }}>
+                            <button className="btn btn-ghost btn-sm" onClick={function() { if (onCancelMsgEdit) onCancelMsgEdit(); }}>Cancel</button>
+                            <button className="btn btn-green btn-sm" onClick={function() { if (onSaveMsgEdit) onSaveMsgEdit(i); }}>Save ✓</button>
+                          </div>
+                        </div>
+                      ) : msg.role === "client" ? (
                         <div className="bubble-in">{msg.text}</div>
                       ) : (
                         <div>
-                          <div className="bubble-out" style={{ whiteSpace: "pre-wrap", opacity: isManual ? 0.8 : 1 }}>{msg.draft || msg.text || msg.manual}</div>
+                          <div className="bubble-out" style={{ whiteSpace: "pre-wrap", opacity: isManual ? 0.85 : 1 }}>{msgText}</div>
                           {msg.questions && (
                             <div className="double-check-box" style={{ marginLeft: "auto", maxWidth: "82%" }}>
                               <div style={{ fontSize: 11, color: "var(--green)", fontWeight: 700, textTransform: "uppercase", marginBottom: 5 }}>✅ Double check you have asked</div>
@@ -1507,13 +1549,18 @@ function NotesTab({ person, onUpdate }) {
   );
 }
 
-/* PERSON DETAIL — three tabs */
+/* PERSON DETAIL — four tabs */
 function PersonDetail({ personId, onBack, onUpdate }) {
   const [activeTab, setActiveTab] = useState("profile");
   const [selectedDog, setSelectedDog] = useState(null);
   const [selectedCat, setSelectedCat] = useState(null);
-  const [showMoveStage, setShowMoveStage] = useState(false);
   const [tick, setTick] = useState(0);
+  const [editingField, setEditingField] = useState(null);
+  const [editingVal, setEditingVal] = useState("");
+  const [editingMsgIdx, setEditingMsgIdx] = useState(null);
+  const [editingMsgVal, setEditingMsgVal] = useState("");
+  const [showBookingForm, setShowBookingForm] = useState(false);
+  const [bookingData, setBookingData] = useState({ date: "", time: "", serviceType: "dog_walk", duration: "30 min", isMeet: false });
 
   const person = db.getAll("people").find(function(p) { return p.id === personId; });
   const dogs = db.getAll("dogs").filter(function(d) { return d.personId === personId; });
@@ -1524,17 +1571,15 @@ function PersonDetail({ personId, onBack, onUpdate }) {
 
   const refresh = function() { setTick(function(t) { return t + 1; }); if (onUpdate) onUpdate(); };
 
-  const moveStage = function(stageId) {
-    const all = db.getAll("people");
-    const idx = all.findIndex(function(p) { return p.id === personId; });
-    if (idx >= 0) { all[idx].stage = stageId; all[idx].lastActionDate = nowStr(); db.set("people", all); }
-    setShowMoveStage(false); refresh();
-  };
-
   const togglePaid = function(visitId) {
     const all = db.getAll("visits");
     const idx = all.findIndex(function(v) { return v.id === visitId; });
     if (idx >= 0) { all[idx].paid = !all[idx].paid; db.set("visits", all); refresh(); }
+  };
+
+  const deleteVisit = function(visitId) {
+    if (!window.confirm("Remove this booking?")) return;
+    db.remove("visits", visitId); refresh();
   };
 
   const deletePerson = function() {
@@ -1546,30 +1591,91 @@ function PersonDetail({ personId, onBack, onUpdate }) {
     onBack();
   };
 
+  // Inline field editor for owner profile
+  const saveField = function(field, val) {
+    const all = db.getAll("people");
+    const idx = all.findIndex(function(p) { return p.id === personId; });
+    if (idx >= 0) { all[idx][field] = val; db.set("people", all); }
+    setEditingField(null); refresh();
+  };
+
+  // Save booking
+  const saveBooking = function() {
+    if (!bookingData.date) return;
+    db.upsert("visits", { id: uid(), personId, serviceType: bookingData.serviceType, date: bookingData.date, time: bookingData.time, duration: bookingData.duration, status: "confirmed", isMeetGreet: bookingData.isMeet, paid: false, amount: "" });
+    if (bookingData.isMeet) {
+      const all = db.getAll("people"); const idx = all.findIndex(function(p) { return p.id === personId; });
+      if (idx >= 0) { all[idx].stage = "meet_arranged"; all[idx].lastActionDate = nowStr(); db.set("people", all); }
+    } else {
+      const all = db.getAll("people"); const idx = all.findIndex(function(p) { return p.id === personId; });
+      if (idx >= 0) { all[idx].stage = "active"; all[idx].lastActionDate = nowStr(); db.set("people", all); }
+    }
+    setShowBookingForm(false);
+    setBookingData({ date: "", time: "", serviceType: "dog_walk", duration: "30 min", isMeet: false });
+    refresh();
+  };
+
+  // Edit/delete messages
+  const saveMessageEdit = function(idx) {
+    const all = db.getAll("people");
+    const pi = all.findIndex(function(p) { return p.id === personId; });
+    if (pi >= 0 && all[pi].messages && all[pi].messages[idx]) {
+      const msg = all[pi].messages[idx];
+      if (msg.role === "client") msg.text = editingMsgVal;
+      else { msg.draft = editingMsgVal; msg.manual = editingMsgVal; }
+      db.set("people", all);
+    }
+    setEditingMsgIdx(null); refresh();
+  };
+
+  const deleteMessage = function(idx) {
+    if (!window.confirm("Delete this message?")) return;
+    const all = db.getAll("people");
+    const pi = all.findIndex(function(p) { return p.id === personId; });
+    if (pi >= 0 && all[pi].messages) { all[pi].messages.splice(idx, 1); db.set("people", all); }
+    refresh();
+  };
+
   if (selectedDog) return <DogWizard personId={personId} existingDog={selectedDog} onSave={function() { setSelectedDog(null); refresh(); }} onBack={function() { setSelectedDog(null); }} />;
   if (selectedCat) return <CatWizard personId={personId} existingCat={selectedCat} onSave={function() { setSelectedCat(null); refresh(); }} onBack={function() { setSelectedCat(null); }} />;
 
-  return (
-    <div key={tick}>
-      {showMoveStage && (
-        <div className="modal-overlay" onClick={function() { setShowMoveStage(false); }}>
-          <div className="modal-sheet">
-            <div className="modal-handle" />
-            <div className="modal-title">Move Stage</div>
-            {STAGES.map(function(s) {
-              return (
-                <div key={s.id} className="card card-tap" onClick={function() { moveStage(s.id); }}>
-                  <div className="row-between"><span style={{ fontWeight: 600 }}>{s.label}</span>{person.stage === s.id && <span className="text-green">✓</span>}</div>
-                </div>
-              );
-            })}
+  // Editable row component
+  const EditRow = function(props) {
+    const isEditing = editingField === props.field;
+    if (isEditing) {
+      return (
+        <div className="mt-4">
+          <div className="text-xs text-muted mb-4">{props.label}</div>
+          <div className="row">
+            <input className="input" style={{ fontSize: 13, padding: "7px 10px" }} value={editingVal} onChange={function(e) { setEditingVal(e.target.value); }} autoFocus onKeyDown={function(e) { if (e.key === "Enter") saveField(props.field, editingVal); }} />
+            <button className="btn btn-green btn-sm" style={{ flexShrink: 0, marginLeft: 6 }} onClick={function() { saveField(props.field, editingVal); }}>✓</button>
+            <button className="btn btn-ghost btn-sm" style={{ flexShrink: 0, marginLeft: 4 }} onClick={function() { setEditingField(null); }}>✕</button>
           </div>
         </div>
-      )}
+      );
+    }
+    if (!props.value) return (
+      <div className="row mt-4" style={{ cursor: "pointer" }} onClick={function() { setEditingField(props.field); setEditingVal(""); }}>
+        <span style={{ fontSize: 14, minWidth: 22 }}>{props.icon}</span>
+        <span className="text-sm text-muted" style={{ fontStyle: "italic" }}>Tap to add {props.label.toLowerCase()}...</span>
+      </div>
+    );
+    return (
+      <div className="row mt-4" style={{ cursor: "pointer" }} onClick={function() { setEditingField(props.field); setEditingVal(props.value); }}>
+        <span style={{ fontSize: 14, minWidth: 22 }}>{props.icon}</span>
+        <div className="flex-1"><div className="text-xs text-muted">{props.label}</div><div className="text-sm">{props.value}</div></div>
+        <span style={{ fontSize: 11, color: "var(--muted2)" }}>✏️</span>
+      </div>
+    );
+  };
 
+  const msgs = person.messages || [];
+
+  return (
+    <div key={tick}>
       <BackBtn onBack={onBack} />
       <div style={{ padding: "0 16px 8px" }}>
-        <div className="row-between mb-8">
+        <div className="row-between mb-4">
           <div><div className="page-title">{person.name || "Unknown"}</div><div className="page-sub">{person.address || (person.extracted && person.extracted.location) || ""}</div></div>
           <StagePill stageId={person.stage} />
         </div>
@@ -1577,39 +1683,52 @@ function PersonDetail({ personId, onBack, onUpdate }) {
 
       <div className="btn-row">
         <button className="btn btn-primary btn-sm" onClick={function() { setActiveTab("messages"); }}>💬 Messages</button>
-        <button className="btn btn-ghost btn-sm" onClick={function() { setShowMoveStage(true); }}>Stage</button>
-        {person.stage !== "active" && <button className="btn btn-green btn-sm" onClick={function() { moveStage("active"); }}>Active ✓</button>}
-      </div>
-      <div className="btn-row" style={{ marginTop: 0 }}>
-        <button className="btn btn-ghost btn-sm" style={{ color: "var(--yellow)", borderColor: "rgba(253,203,110,0.3)" }} onClick={function() { moveStage("not_proceeding"); }}>Archive</button>
+        <button className="btn btn-green btn-sm" onClick={function() { setActiveTab("bookings"); setShowBookingForm(true); }}>+ Book</button>
+        <button className="btn btn-ghost btn-sm" style={{ color: "var(--yellow)", borderColor: "rgba(253,203,110,0.3)" }} onClick={function() { const all = db.getAll("people"); const idx = all.findIndex(function(p) { return p.id === personId; }); if (idx >= 0) { all[idx].stage = "not_proceeding"; all[idx].lastActionDate = nowStr(); db.set("people", all); } refresh(); }}>Archive</button>
         <button className="btn btn-ghost btn-sm" style={{ color: "var(--red)", borderColor: "rgba(214,48,49,0.3)" }} onClick={deletePerson}>Delete</button>
       </div>
 
-      {/* Three tabs */}
+      {/* Four tabs */}
       <div className="pill-tabs mt-4 mb-4">
-        {[["profile","Profile"],["notes","Notes"],["messages","Messages"]].map(function(t) {
-          return <button key={t[0]} className={"pill-tab" + (activeTab === t[0] ? " active" : "")} onClick={function() { setActiveTab(t[0]); }}>{t[1]}</button>;
+        {[["profile","Profile"],["bookings","Bookings"],["notes","Notes"],["messages","Messages"]].map(function(t) {
+          return <button key={t[0]} className={"pill-tab" + (activeTab === t[0] ? " active" : "")} onClick={function() { setActiveTab(t[0]); if (t[0] !== "bookings") setShowBookingForm(false); }}>{t[1]}</button>;
         })}
       </div>
 
-      {/* PROFILE TAB */}
+      {/* ── PROFILE TAB */}
       {activeTab === "profile" && (
         <div>
           <div className="section-label">Owner</div>
           <div className="card">
-            {[["📞", person.phone], ["🏠", person.address || (person.extracted && person.extracted.location)], ["📮", person.postcode], ["📱", person.platform], ["💷", person.rate ? "£" + person.rate + " per walk" : null], ["🔑", person.accessNotes]].filter(function(row) { return row[1]; }).map(function(row, i) {
-              return <div key={i} className="row mt-4"><span style={{ fontSize: 14, minWidth: 22 }}>{row[0]}</span><span className="text-sm">{row[1]}</span></div>;
-            })}
-            {person.notes && <div className="text-sm text-muted mt-8">{person.notes}</div>}
+            <EditRow icon="👤" label="Name" field="name" value={person.name} />
+            <EditRow icon="📞" label="Phone" field="phone" value={person.phone} />
+            <EditRow icon="🏠" label="Address" field="address" value={person.address || (person.extracted && person.extracted.location)} />
+            <EditRow icon="📮" label="Postcode" field="postcode" value={person.postcode} />
+            <EditRow icon="📱" label="Platform" field="platform" value={person.platform} />
+            <EditRow icon="💷" label="Rate" field="rate" value={person.rate ? "£" + person.rate + " per walk" : null} />
+            <EditRow icon="🔑" label="Access notes" field="accessNotes" value={person.accessNotes} />
           </div>
 
+          {/* Extracted from messages — owner info */}
+          {person.extracted && (person.extracted.dates || person.extracted.recurring || person.extracted.notes) && (
+            <div>
+              <div className="section-label">From Messages</div>
+              <div className="card">
+                {person.extracted.dates && person.extracted.dates !== "null" && <div className="row mt-4"><span style={{ fontSize: 14, minWidth: 22 }}>📅</span><div><div className="text-xs text-muted">Dates mentioned</div><div className="text-sm">{person.extracted.dates}</div></div></div>}
+                {person.extracted.recurring && person.extracted.recurring !== "null" && <div className="row mt-4"><span style={{ fontSize: 14, minWidth: 22 }}>🔁</span><div><div className="text-xs text-muted">Regular work</div><div className="text-sm">{person.extracted.recurring}</div></div></div>}
+                {person.extracted.notes && person.extracted.notes !== "null" && <div className="row mt-4"><span style={{ fontSize: 14, minWidth: 22 }}>📝</span><div><div className="text-xs text-muted">Notes</div><div className="text-sm">{person.extracted.notes}</div></div></div>}
+              </div>
+            </div>
+          )}
+
           {dogs.map(function(dog) {
-            const fields = [["🐾","Breed",dog.breed],["🎂","Age",dog.age],["📏","Size",dog.size === "S" ? "Small" : dog.size === "M" ? "Medium" : dog.size === "L" ? "Large" : dog.size],["🐶","With other dogs",dog.goodWithDogs],["🦮","On lead",dog.goodOnLead],["💊","Health",dog.healthIssues === "Yes" ? dog.healthNotes : null],["😨","Spooks",dog.spooks],["💪","Personality",dog.personality],["🏥","Vet",dog.vet],["📞","Vet phone",dog.vetPhone]].filter(function(f) { return f[2]; });
+            const fields = [["🐾","Breed",dog.breed],["🎂","Age",dog.age],["📏","Size",dog.size === "S" ? "Small" : dog.size === "M" ? "Medium" : dog.size === "L" ? "Large" : dog.size],["🐶","With other dogs",dog.goodWithDogs],["🦮","On lead",dog.goodOnLead],["💊","Health",dog.healthIssues === "Yes" ? dog.healthNotes : null],["😨","Spooks",dog.spooks],["💪","Personality",dog.personality],["🏥","Vet",dog.vet],["📞","Vet phone",dog.vetPhone]];
+            const hasAny = fields.some(function(f) { return !!f[2]; });
             return (
               <div key={dog.id}>
-                <div className="section-label" style={{ cursor: "pointer" }} onClick={function() { setSelectedDog(dog); }}>🐕 {dog.name.toUpperCase()} <span style={{ fontSize: 10, color: "var(--purple)", marginLeft: 4 }}>edit ›</span></div>
+                <div className="section-label" style={{ cursor: "pointer" }} onClick={function() { setSelectedDog(dog); }}>🐕 {(dog.name || "Dog").toUpperCase()} <span style={{ fontSize: 10, color: "var(--purple)", marginLeft: 4 }}>edit ›</span></div>
                 <div className="card">
-                  {fields.length === 0 ? <div className="text-sm text-muted" style={{ fontStyle: "italic" }}>Tap section label to edit</div> : fields.map(function(f, i) {
+                  {!hasAny ? <div className="text-sm text-muted" style={{ fontStyle: "italic" }}>Tap section label to add details</div> : fields.filter(function(f) { return f[2]; }).map(function(f, i) {
                     return <div key={i} className="row mt-4"><span style={{ fontSize: 14, minWidth: 22 }}>{f[0]}</span><div><div className="text-xs text-muted">{f[1]}</div><div className="text-sm">{f[2]}</div></div></div>;
                   })}
                   {dog.meetGreetResult && <div className="mt-8"><span className={"badge " + (dog.meetGreetResult === "Great" ? "badge-green" : dog.meetGreetResult === "Fine" ? "badge-purple" : "badge-orange")}>Meet: {dog.meetGreetResult}</span></div>}
@@ -1619,12 +1738,13 @@ function PersonDetail({ personId, onBack, onUpdate }) {
           })}
 
           {cats.map(function(cat) {
-            const fields = [["🎂","Age",cat.age],["🏠","Indoor/Outdoor",cat.indoorOutdoor],["🍽️","Feeding",cat.feedingRoutine],["🪣","Litter",cat.litterNotes],["💊","Medication",cat.medication === "Yes" ? cat.medicationNotes : null],["💪","Personality",cat.personality]].filter(function(f) { return f[2]; });
+            const fields = [["🎂","Age",cat.age],["🏠","Indoor/Outdoor",cat.indoorOutdoor],["🍽️","Feeding",cat.feedingRoutine],["🪣","Litter",cat.litterNotes],["💊","Medication",cat.medication === "Yes" ? cat.medicationNotes : null],["💪","Personality",cat.personality]];
+            const hasAny = fields.some(function(f) { return !!f[2]; });
             return (
               <div key={cat.id}>
-                <div className="section-label" style={{ cursor: "pointer" }} onClick={function() { setSelectedCat(cat); }}>🐱 {cat.name.toUpperCase()} <span style={{ fontSize: 10, color: "var(--purple)", marginLeft: 4 }}>edit ›</span></div>
+                <div className="section-label" style={{ cursor: "pointer" }} onClick={function() { setSelectedCat(cat); }}>🐱 {(cat.name || "Cat").toUpperCase()} <span style={{ fontSize: 10, color: "var(--purple)", marginLeft: 4 }}>edit ›</span></div>
                 <div className="card">
-                  {fields.length === 0 ? <div className="text-sm text-muted" style={{ fontStyle: "italic" }}>Tap section label to edit</div> : fields.map(function(f, i) {
+                  {!hasAny ? <div className="text-sm text-muted" style={{ fontStyle: "italic" }}>Tap section label to add details</div> : fields.filter(function(f) { return f[2]; }).map(function(f, i) {
                     return <div key={i} className="row mt-4"><span style={{ fontSize: 14, minWidth: 22 }}>{f[0]}</span><div><div className="text-xs text-muted">{f[1]}</div><div className="text-sm">{f[2]}</div></div></div>;
                   })}
                 </div>
@@ -1634,44 +1754,91 @@ function PersonDetail({ personId, onBack, onUpdate }) {
 
           <div className="btn-row mt-4">
             <button className="btn btn-ghost btn-sm" onClick={function() { setSelectedDog({ id: uid(), personId, name: "", breed: "", age: "", size: "", goodWithDogs: "", goodOnLead: "", healthIssues: "No", healthNotes: "", spooks: "", vet: "", vetPhone: "", personality: "", meetGreetResult: "" }); }}>+ Add Dog</button>
-            <button className="btn btn-ghost btn-sm" onClick={function() { setSelectedCat({ id: uid(), personId: personId, name: "", age: "", indoorOutdoor: "", feedingRoutine: "", litterNotes: "", medication: "No", medicationNotes: "", personality: "" }); }}>+ Add Cat</button>
+            <button className="btn btn-ghost btn-sm" onClick={function() { setSelectedCat({ id: uid(), personId, name: "", age: "", indoorOutdoor: "", feedingRoutine: "", litterNotes: "", medication: "No", medicationNotes: "", personality: "" }); }}>+ Add Cat</button>
           </div>
-
-          {visits.length > 0 && (
-            <div>
-              <div className="section-label">Visits</div>
-              {visits.map(function(v) {
-                const svc = SERVICE_MAP[v.serviceType];
-                return (
-                  <div key={v.id} className="card card-sm">
-                    <div className="row-between">
-                      <div>
-                        <div style={{ fontWeight: 600, fontSize: 14 }}>{v.isMeetGreet ? "🤝 Meet and Greet" : ((svc && svc.icon) || "") + " " + ((svc && svc.label) || v.serviceType)}</div>
-                        <div className="text-xs text-muted">{fmtDate(v.date)}{v.time ? " · " + v.time : ""}{v.duration ? " · " + v.duration : ""}</div>
-                      </div>
-                      <div className="row">
-                        {v.amount && <span className="text-sm text-muted">{"£" + v.amount}</span>}
-                        <div className={"check-box" + (v.paid ? " done" : "")} style={{ width: 22, height: 22, borderRadius: 6 }} onClick={function() { togglePaid(v.id); }}>
-                          {v.paid && <span style={{ color: "#001a12", fontSize: 11, fontWeight: 800 }}>✓</span>}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
           <div style={{ height: 24 }} />
         </div>
       )}
 
-      {/* NOTES TAB */}
+      {/* ── BOOKINGS TAB */}
+      {activeTab === "bookings" && (
+        <div>
+          <div className="btn-row mt-4">
+            <button className="btn btn-primary btn-sm" onClick={function() { setBookingData(function(b) { return Object.assign({}, b, { isMeet: false }); }); setShowBookingForm(true); }}>+ Add Booking</button>
+            <button className="btn btn-ghost btn-sm" onClick={function() { setBookingData(function(b) { return Object.assign({}, b, { isMeet: true, serviceType: "dog_walk" }); }); setShowBookingForm(true); }}>+ Meet and Greet</button>
+          </div>
+
+          {showBookingForm && (
+            <div className="card" style={{ marginTop: 4 }}>
+              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 12 }}>{bookingData.isMeet ? "📅 Meet and Greet" : "📅 New Booking"}</div>
+              <div className="input-group"><div className="input-label">Date</div><input className="input" type="date" value={bookingData.date} onChange={function(e) { setBookingData(function(b) { return Object.assign({}, b, { date: e.target.value }); }); }} /></div>
+              <div className="input-group"><div className="input-label">Time</div><input className="input" type="time" value={bookingData.time} onChange={function(e) { setBookingData(function(b) { return Object.assign({}, b, { time: e.target.value }); }); }} /></div>
+              {!bookingData.isMeet && (
+                <div>
+                  <div className="input-group">
+                    <div className="input-label">Service</div>
+                    <div className="chip-row">{SERVICES.map(function(s) { return <Chip key={s.id} label={s.icon + " " + s.label} active={bookingData.serviceType === s.id} onClick={function() { setBookingData(function(b) { return Object.assign({}, b, { serviceType: s.id }); }); }} />; })}</div>
+                  </div>
+                  <div className="input-group">
+                    <div className="input-label">Duration</div>
+                    <div className="chip-row">{["30 min","45 min","60 min"].map(function(d) { return <Chip key={d} label={d} active={bookingData.duration === d} onClick={function() { setBookingData(function(b) { return Object.assign({}, b, { duration: d }); }); }} />; })}</div>
+                  </div>
+                </div>
+              )}
+              <div className="btn-row mt-8" style={{ padding: 0 }}>
+                <button className="btn btn-ghost" onClick={function() { setShowBookingForm(false); }}>Cancel</button>
+                <button className="btn btn-green" disabled={!bookingData.date} onClick={saveBooking}>Save ✓</button>
+              </div>
+            </div>
+          )}
+
+          {visits.length === 0 && !showBookingForm && (
+            <div className="empty-state"><div className="icon">📅</div><h3>No bookings yet</h3><p>Tap + Add Booking or + Meet and Greet to add one</p></div>
+          )}
+
+          {visits.map(function(v) {
+            const svc = SERVICE_MAP[v.serviceType];
+            return (
+              <div key={v.id} className="card card-sm">
+                <div className="row-between">
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 14 }}>{v.isMeetGreet ? "🤝 Meet and Greet" : ((svc && svc.icon) || "") + " " + ((svc && svc.label) || v.serviceType)}</div>
+                    <div className="text-xs text-muted">{fmtDate(v.date)}{v.time ? " · " + v.time : ""}{v.duration ? " · " + v.duration : ""}</div>
+                  </div>
+                  <div className="row">
+                    {!v.isMeetGreet && (
+                      <div className={"check-box" + (v.paid ? " done" : "")} style={{ width: 22, height: 22, borderRadius: 6 }} onClick={function() { togglePaid(v.id); }}>
+                        {v.paid && <span style={{ color: "#001a12", fontSize: 11, fontWeight: 800 }}>✓</span>}
+                      </div>
+                    )}
+                    <button className="btn btn-ghost btn-xs" style={{ color: "var(--red)", borderColor: "transparent", marginLeft: 4 }} onClick={function() { deleteVisit(v.id); }}>✕</button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          <div style={{ height: 24 }} />
+        </div>
+      )}
+
+      {/* ── NOTES TAB */}
       {activeTab === "notes" && <NotesTab person={person} onUpdate={refresh} />}
 
-      {/* MESSAGES TAB */}
+      {/* ── MESSAGES TAB — with edit/delete */}
       {activeTab === "messages" && (
         <div>
-          <MessagingFlow person={person} onBack={function() { setActiveTab("profile"); }} onPersonUpdated={refresh} />
+          <MessagingFlow
+            person={person}
+            onBack={function() { setActiveTab("profile"); }}
+            onPersonUpdated={refresh}
+            onEditMsg={function(idx, val) { setEditingMsgIdx(idx); setEditingMsgVal(val); }}
+            onDeleteMsg={deleteMessage}
+            editingMsgIdx={editingMsgIdx}
+            editingMsgVal={editingMsgVal}
+            onEditMsgChange={setEditingMsgVal}
+            onSaveMsgEdit={saveMessageEdit}
+            onCancelMsgEdit={function() { setEditingMsgIdx(null); }}
+          />
         </div>
       )}
     </div>
