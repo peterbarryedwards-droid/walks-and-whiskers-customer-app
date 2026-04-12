@@ -213,7 +213,7 @@ const PROMPTS = {
     return "You help Freddie reply to a new client enquiry. Write a natural, warm reply following these rules:\n\n" +
       TONE + "\n\n" +
       "MESSAGE STRUCTURE — follow this order:\n" +
-      "1. Brief warm opener acknowledging what they need\n" +
+      "1. Brief warm opener — always start with a sentence thanking them for getting in touch or for their enquiry. Keep it short, one line. e.g. 'Thanks for getting in touch!' or 'Great to hear from you about dog sitting.' — genuine but not gushing\n" +
       "2. 'I've checked my calendar' — always reference this, it shows Freddie is professional with a real diary. If exact dates aren't given, say availability looks good but ask them to confirm the exact days so he can be sure\n" +
       "3. " + meetGreetGuidance + "\n" +
       "4. Rate — mention it last, casually, like an afterthought: 'just to let you know my rate is...' — NOT as the second thing you say\n" +
