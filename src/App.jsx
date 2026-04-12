@@ -175,35 +175,49 @@ const getPrices = () => db.get("prices") || DEFAULT_PRICES;
 const pricesText = () => getPrices().map(p => p.service + " (" + p.detail + "): " + (p.prefix || "") + "£" + p.price).join("\n");
 
 /* SYSTEM PROMPTS */
-const TONE = "Tone: warm and professional but concise. No small talk, no references to their personal plans or holidays, no filler phrases. Get to the point quickly.";
+const TONE = "Tone: friendly, genuine and warm — like a reliable local who loves dogs and genuinely cares. Not overly formal, not gushing. Keep it concise — no lengthy introductions, no hollow filler phrases like 'that sounds wonderful', no references to their holiday or weekend plans. Friendly and to the point.";
 
 const PROMPTS = {
   new_client: (platform, prices, service) => {
-    const isCat = service && (service.toLowerCase().includes("cat"));
     const isDirect = platform === "Direct" || platform === "Other";
-    return "You help Freddie, a pet care professional in Winchester, reply to a new client enquiry.\n" +
-      (isDirect ? "Freddie's full price list:\n" + prices + "\nMention the rate relevant to the service they have asked about.\n" : "Platform is " + platform + " — NEVER mention rates, the platform sets them.\n") +
+    // Find the most relevant price line for this service
+    let relevantRate = "";
+    if (isDirect && prices) {
+      const lines = prices.split("\n");
+      if (service && service.includes("cat")) {
+        relevantRate = lines.find(function(l) { return l.toLowerCase().includes("cat"); }) || "";
+      } else if (service && (service.includes("sit") || service.includes("stay"))) {
+        relevantRate = lines.filter(function(l) { return l.toLowerCase().includes("sit") || l.toLowerCase().includes("stay"); }).join("\n") || "";
+      } else if (service && service.includes("drop")) {
+        relevantRate = lines.find(function(l) { return l.toLowerCase().includes("drop"); }) || "";
+      } else {
+        relevantRate = lines.filter(function(l) { return l.toLowerCase().includes("walk"); }).join("\n") || "";
+      }
+      if (!relevantRate) relevantRate = prices; // fallback to full list
+    }
+    return "You help Freddie, a dog walker and pet carer in Winchester, reply to a new client enquiry.\n" +
+      (isDirect ? "Freddie's rates (mention the relevant one naturally in the reply):\n" + relevantRate + "\n" : "Platform is " + platform + " — NEVER mention rates, the platform handles pricing.\n") +
       TONE + "\n" +
-      "Reply structure: 1) thank them briefly 2) if location unknown ask for it 3) if dates unknown ask 4) " +
-      (isDirect ? "state the relevant rate clearly" : "do not mention rate") +
-      " 5) suggest a short meet and greet naturally — this ALWAYS comes before any booking 6) close warmly.\n" +
-      "IMPORTANT: Do NOT confirm any booking. The next step is always a meet and greet first.\n" +
-      "Sign off as Freddie. British English.\n" +
+      "Reply structure: 1) warm, brief thanks 2) if location not known, ask 3) if dates not known, ask 4) " +
+      (isDirect ? "mention the relevant rate naturally — don't make it feel like a sales pitch, just be clear" : "do not mention rates") +
+      " 5) suggest a quick meet and greet — frame it as a chance for the pet to get comfortable, not a formality 6) friendly sign-off.\n" +
+      "IMPORTANT: Do NOT confirm any booking. A meet and greet always comes first.\n" +
+      "Sign off as Freddie. British English. Keep it under 150 words.\n" +
       "Format with exactly:\nDRAFT REPLY\nQUESTIONS TO ASK";
   },
 
-  existing_client: () => "You help Freddie reply to an existing client. Skip introductions and meet and greet suggestions. " + TONE + " Sign off as Freddie. British English.\nFormat with exactly:\nDRAFT REPLY",
+  existing_client: () => "You help Freddie reply to an existing client he already knows. Skip introductions, don't suggest a meet and greet. " + TONE + " Sign off as Freddie. British English. Keep it brief.\nFormat with exactly:\nDRAFT REPLY",
 
   quote: (platform, prices) => {
     const isDirect = platform === "Direct" || platform === "Other";
     return "You help Freddie respond to a price enquiry.\n" +
-      (isDirect ? "Freddie's full price list:\n" + prices + "\nState the relevant rates clearly and confidently. Do not apologise for the price.\n" : "Platform is " + platform + " — NEVER mention rates, the platform sets them.\n") +
+      (isDirect ? "Freddie's full rate list:\n" + prices + "\nMention the relevant rates clearly. Be confident — don't apologise for the price or over-explain.\n" : "Platform is " + platform + " — NEVER mention rates, the platform handles pricing.\n") +
       TONE + "\nSign off as Freddie. British English.\nFormat with exactly:\nDRAFT REPLY\nWHAT TO MENTION";
   },
 
   confirm: () => "You help Freddie send a general response. " + TONE + " Sign off as Freddie. British English.\nFormat with exactly:\nDRAFT REPLY\nMISSING INFO TO GET",
 
-  decline: () => "You help Freddie politely decline a job. Kind and brief — do not burn bridges. " + TONE + " Sign off as Freddie. British English.\nFormat with exactly:\nDRAFT REPLY\nONE TIP",
+  decline: () => "You help Freddie politely decline a job. Be kind and brief — leave the door open for the future. " + TONE + " Sign off as Freddie. British English.\nFormat with exactly:\nDRAFT REPLY\nONE TIP",
 };
 
 /* AI */
