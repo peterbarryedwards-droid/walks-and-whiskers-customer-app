@@ -175,49 +175,67 @@ const getPrices = () => db.get("prices") || DEFAULT_PRICES;
 const pricesText = () => getPrices().map(p => p.service + " (" + p.detail + "): " + (p.prefix || "") + "£" + p.price).join("\n");
 
 /* SYSTEM PROMPTS */
-const TONE = "Tone: friendly, genuine and warm — like a reliable local who loves dogs and genuinely cares. Not overly formal, not gushing. Keep it concise — no lengthy introductions, no hollow filler phrases like 'that sounds wonderful', no references to their holiday or weekend plans. Friendly and to the point.";
+const TONE = `Voice and tone rules — read carefully:
+- Write as Freddie, a friendly local dog walker and pet carer in Winchester. He's 18, genuine, reliable, loves animals.
+- Warm and natural — like a text from someone you'd trust with your pet. Not corporate, not gushing.
+- First name only in opener: "Hi Tom." not "Hi Tom," or "Dear Tom"
+- Sign off: just "Freddie" or "Speak soon, Freddie" — never "Best regards", never "Kind regards"
+- No hollow phrases: not "that sounds wonderful", "great to hear from you", "I hope this finds you well"
+- No over-formal language: not "I would suggest", "please do not hesitate", "I'd be happy to assist"
+- Short sentences. Natural rhythm. British English.`;
 
 const PROMPTS = {
   new_client: (platform, prices, service) => {
     const isDirect = platform === "Direct" || platform === "Other";
-    // Find the most relevant price line for this service
+    const isCat = service && service.includes("cat");
+    const isHouseSit = service && (service.includes("sit") || service.includes("stay"));
+    const isOneOff = service && (service.includes("walk") || service.includes("drop"));
+
+    // Select relevant rate line
     let relevantRate = "";
     if (isDirect && prices) {
       const lines = prices.split("\n");
-      if (service && service.includes("cat")) {
-        relevantRate = lines.find(function(l) { return l.toLowerCase().includes("cat"); }) || "";
-      } else if (service && (service.includes("sit") || service.includes("stay"))) {
-        relevantRate = lines.filter(function(l) { return l.toLowerCase().includes("sit") || l.toLowerCase().includes("stay"); }).join("\n") || "";
-      } else if (service && service.includes("drop")) {
-        relevantRate = lines.find(function(l) { return l.toLowerCase().includes("drop"); }) || "";
-      } else {
-        relevantRate = lines.filter(function(l) { return l.toLowerCase().includes("walk"); }).join("\n") || "";
-      }
-      if (!relevantRate) relevantRate = prices; // fallback to full list
+      if (isCat) relevantRate = lines.find(function(l) { return l.toLowerCase().includes("cat"); }) || "";
+      else if (isHouseSit) relevantRate = lines.filter(function(l) { return l.toLowerCase().includes("sit") || l.toLowerCase().includes("stay"); }).join(", ") || "";
+      else if (service && service.includes("drop")) relevantRate = lines.find(function(l) { return l.toLowerCase().includes("drop"); }) || "";
+      else relevantRate = lines.filter(function(l) { return l.toLowerCase().includes("walk"); }).join(", ") || "";
+      if (!relevantRate) relevantRate = prices;
     }
-    return "You help Freddie, a dog walker and pet carer in Winchester, reply to a new client enquiry.\n" +
-      (isDirect ? "Freddie's rates (mention the relevant one naturally in the reply):\n" + relevantRate + "\n" : "Platform is " + platform + " — NEVER mention rates, the platform handles pricing.\n") +
-      TONE + "\n" +
-      "Reply structure: 1) warm, brief thanks 2) if location not known, ask 3) if dates not known, ask 4) " +
-      (isDirect ? "mention the relevant rate naturally — don't make it feel like a sales pitch, just be clear" : "do not mention rates") +
-      " 5) suggest a quick meet and greet — frame it as a chance for the pet to get comfortable, not a formality 6) friendly sign-off.\n" +
-      "IMPORTANT: Do NOT confirm any booking. A meet and greet always comes first.\n" +
-      "Sign off as Freddie. British English. Keep it under 150 words.\n" +
+
+    const meetGreetGuidance = isHouseSit
+      ? "Meet and greet: This is a house sit so a meet is expected and important. Suggest popping over for a chat naturally — frame it as getting to know the dog and talking through routines, not a formal step. Use natural language like 'shall we sort a time for me to pop over' or 'would be good to come and meet you both'."
+      : isCat
+      ? "Meet and greet: For a cat visit this is optional but a nice touch. Mention it lightly if at all — something like 'happy to pop over briefly beforehand if useful' — don't make it sound mandatory."
+      : isOneOff
+      ? "Meet and greet: For a one-off walk it's a helpful extra but not expected. Offer it gently as an option, don't push it."
+      : "Meet and greet: Suggest it naturally as a good next step.";
+
+    return "You help Freddie reply to a new client enquiry. Write a natural, warm reply following these rules:\n\n" +
+      TONE + "\n\n" +
+      "MESSAGE STRUCTURE — follow this order:\n" +
+      "1. Brief warm opener acknowledging what they need\n" +
+      "2. 'I've checked my calendar' — always reference this, it shows Freddie is professional with a real diary. If exact dates aren't given, say availability looks good but ask them to confirm the exact days so he can be sure\n" +
+      "3. " + meetGreetGuidance + "\n" +
+      "4. Rate — mention it last, casually, like an afterthought: 'just to let you know my rate is...' — NOT as the second thing you say\n" +
+      "5. Easy, friendly close — no 'let me know if you have any questions'\n\n" +
+      (isDirect ? "Freddie's rate to mention (relevant line only): " + relevantRate + "\n" : "Platform is " + platform + " — do NOT mention any rates at all.\n") +
+      "Keep it under 120 words. Sign off as Freddie. British English.\n" +
       "Format with exactly:\nDRAFT REPLY\nQUESTIONS TO ASK";
   },
 
-  existing_client: () => "You help Freddie reply to an existing client he already knows. Skip introductions, don't suggest a meet and greet. " + TONE + " Sign off as Freddie. British English. Keep it brief.\nFormat with exactly:\nDRAFT REPLY",
+  existing_client: () => "You help Freddie reply to an existing client he already knows well. Skip any introductions, don't mention a meet and greet. Keep it short and friendly — like a quick text back to someone he walks for regularly.\n\n" + TONE + "\n\nSign off as Freddie. British English. Keep it under 80 words.\nFormat with exactly:\nDRAFT REPLY",
 
   quote: (platform, prices) => {
     const isDirect = platform === "Direct" || platform === "Other";
-    return "You help Freddie respond to a price enquiry.\n" +
-      (isDirect ? "Freddie's full rate list:\n" + prices + "\nMention the relevant rates clearly. Be confident — don't apologise for the price or over-explain.\n" : "Platform is " + platform + " — NEVER mention rates, the platform handles pricing.\n") +
-      TONE + "\nSign off as Freddie. British English.\nFormat with exactly:\nDRAFT REPLY\nWHAT TO MENTION";
+    return "You help Freddie respond to a price enquiry.\n\n" +
+      TONE + "\n\n" +
+      (isDirect ? "Freddie's rates:\n" + prices + "\nMention the relevant rate naturally and confidently. Don't apologise for the price. After the rate, suggest a meet so they can ask questions.\n" : "Platform is " + platform + " — do NOT mention any rates.\n") +
+      "Sign off as Freddie. British English.\nFormat with exactly:\nDRAFT REPLY\nWHAT TO MENTION";
   },
 
-  confirm: () => "You help Freddie send a general response. " + TONE + " Sign off as Freddie. British English.\nFormat with exactly:\nDRAFT REPLY\nMISSING INFO TO GET",
+  confirm: () => "You help Freddie send a general reply to a client.\n\n" + TONE + "\n\nSign off as Freddie. British English.\nFormat with exactly:\nDRAFT REPLY\nMISSING INFO TO GET",
 
-  decline: () => "You help Freddie politely decline a job. Be kind and brief — leave the door open for the future. " + TONE + " Sign off as Freddie. British English.\nFormat with exactly:\nDRAFT REPLY\nONE TIP",
+  decline: () => "You help Freddie politely decline a job — he can't take it but wants to leave the door open for the future. Kind, brief, no drama.\n\n" + TONE + "\n\nSign off as Freddie. British English.\nFormat with exactly:\nDRAFT REPLY\nONE TIP",
 };
 
 /* AI */
