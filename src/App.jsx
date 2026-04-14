@@ -322,6 +322,7 @@ const PROMPTS = {
       "4. Rate — mention it last, casually, like an afterthought: 'just to let you know my rate is...' — NOT as the second thing you say\n" +
       "5. Easy, friendly close — no 'let me know if you have any questions'\n\n" +
       (isDirect ? "Freddie's rate to mention (relevant line only): " + relevantRate + "\n" : "Platform is " + platform + " — do NOT mention any rates at all.\n") +
+      (platform === "Rover" ? "NOTE: Rover sometimes mislabels booking types (e.g. day visit shown as overnight). If the service type seems unclear from the message, acknowledge what was requested and gently confirm the exact type of service needed.\n" : "") +
       "Keep it under 120 words. Sign off as Freddie. British English.\n" +
       "Format with exactly:\nDRAFT REPLY\nQUESTIONS TO ASK";
   },
@@ -663,7 +664,7 @@ function MessagingFlow({ person, onBack, onPersonUpdated, onEditMsg, onDeleteMsg
     setBookingForm({ loading: true });
     try {
       const today = new Date();
-      const aiPrompt = "Convert these dates and times to structured JSON. Today is " + today.toDateString() + ".\n\nText: \"" + datesRaw + "\"\n\nReturn ONLY valid JSON:\n{\"dates\":[{\"date\":\"YYYY-MM-DD\",\"time\":\"HH:MM or empty string\"}]}\n\nRules:\n- Use the next upcoming occurrence if day name only (e.g. next Tuesday)\n- If multiple times given for same date, create one entry per time\n- If year not specified use " + today.getFullYear() + "\n- dates array can be empty if nothing parseable";
+      const aiPrompt = "Convert these dates and times to structured JSON. Today is " + today.toDateString() + ".\n\nText: \"" + datesRaw + "\"\n\nReturn ONLY valid JSON:\n{\"dates\":[{\"date\":\"YYYY-MM-DD\",\"time\":\"HH:MM or empty string\"}]}\n\nRules:\n- Use the next upcoming occurrence if day name only (e.g. next Tuesday)\n- If multiple times given for same date, create one entry per time\n- If year not specified use " + today.getFullYear() + "\n- dates array can be empty if nothing parseable\n- ROVER FORMAT: Rover shows bookings as 'Start: Day DD Mon at HH:MM - HH:MM / End: Day DD Mon at HH:MM - HH:MM'. Use the first time after 'Start:' as the start time. If start and end are same day create one entry. If they span multiple days create one entry per day.";
       const result = await callClaudeJSON(aiPrompt);
       const parsed = (result.dates || []).filter(function(d) { return d.date; });
 
@@ -735,8 +736,11 @@ function MessagingFlow({ person, onBack, onPersonUpdated, onEditMsg, onDeleteMsg
     }
     const knownContext = knownParts.length > 0 ? "\n\nAlready known about this client (DO NOT ask about these):\n" + knownParts.join("\n") : "";
 
+    const isRover = platform === "Rover";
+    const roverDateNote = isRover ? "\n\nROVER DATE FORMAT NOTE: Rover shows bookings like this:\n'Start: Fri 17 Apr at 8:00 - 8:00 / End: Fri 17 Apr at 18:30 - 19:30'\nThe times show a window (earliest - latest). Interpret Start as the start of the start window, End as the end of the end window. So the above = Fri 17 Apr, 8:00am to 19:30.\n\nROVER BOOKING TYPE NOTE: Rover sometimes labels day visits as 'overnight' or vice versa. If the booking type seems ambiguous or contradictory (e.g. labelled overnight but start and end are same day, or labelled day visit but dates span multiple days), add a question asking Freddie to clarify the actual service needed." : "";
+
     const prompt = "You are helping Freddie, a pet care professional, analyse a message on " + platform + ".\n" +
-      "Enquiry type: " + (enquiryType && enquiryType.label) + "\nMessage: \"\"\"" + rawMessage + "\"\"\"" + knownContext + "\n\n" +
+      "Enquiry type: " + (enquiryType && enquiryType.label) + "\nMessage: \"\"\"" + rawMessage + "\"\"\"" + knownContext + roverDateNote + "\n\n" +
       "Extract any NEW info from this message. Only ask questions about fields that are genuinely unknown.\n" +
       "For the service field: dog_walk, cat_visit, dog_drop_in, home_sit, stay_over.\n" +
       "If they mention a cat — service must be cat_visit.\n" +
@@ -1947,7 +1951,7 @@ function PersonDetail({ personId, onBack, onUpdate }) {
     setDatePasteLoading(true);
     try {
       const today = new Date();
-      const prompt = "Extract all dates and times from this message. Today is " + today.toDateString() + ".\n\nMessage: \"" + text + "\"\n\nReturn ONLY valid JSON:\n{\"dates\":[{\"date\":\"YYYY-MM-DD\",\"time\":\"HH:MM or empty string\",\"label\":\"friendly label e.g. Mon 14 July at 10:30am\"}]}\n\nRules:\n- Use next upcoming occurrence for day names (e.g. next Tuesday from today)\n- If multiple times for same date, create one entry per time\n- If year not specified use " + today.getFullYear() + "\n- Return empty array if nothing found";
+      const prompt = "Extract all dates and times from this message. Today is " + today.toDateString() + ".\n\nMessage: \"" + text + "\"\n\nReturn ONLY valid JSON:\n{\"dates\":[{\"date\":\"YYYY-MM-DD\",\"time\":\"HH:MM or empty string\",\"label\":\"friendly label e.g. Mon 14 July at 10:30am\"}]}\n\nRules:\n- Use next upcoming occurrence for day names (e.g. next Tuesday from today)\n- If multiple times for same date, create one entry per time\n- If year not specified use " + today.getFullYear() + "\n- Return empty array if nothing found\n- ROVER FORMAT: Rover shows bookings as 'Start: Day DD Mon at HH:MM - HH:MM / End: Day DD Mon at HH:MM - HH:MM'. The times are windows. Use the first time after 'Start:' as the start time. Create one entry per day covered. If start and end are same day, create one entry. If they span multiple days, create one entry per day.";
       const result = await callClaudeJSON(prompt);
       const dates = (result.dates || []).filter(function(d) { return d.date; }).map(function(d) { return Object.assign({}, d, { selected: true }); });
       if (isMeet) setParsedMeet(dates);
