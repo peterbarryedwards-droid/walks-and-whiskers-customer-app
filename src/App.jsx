@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 
 const CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
@@ -105,13 +105,116 @@ const CSS = `
   .type-card:active { background: var(--card2); }
 `;
 
-/* DATA */
+/* SUPABASE — cloud database */
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+const supa = {
+  headers: { "apikey": SUPABASE_KEY, "Authorization": "Bearer " + SUPABASE_KEY, "Content-Type": "application/json", "Prefer": "return=minimal" },
+
+  async getAll(table) {
+    try {
+      const r = await fetch(SUPABASE_URL + "/rest/v1/" + table + "?select=*", { headers: this.headers });
+      if (!r.ok) return [];
+      const rows = await r.json();
+      return rows.map(function(row) { return row.data; });
+    } catch { return []; }
+  },
+
+  async upsert(table, item) {
+    try {
+      await fetch(SUPABASE_URL + "/rest/v1/" + table, {
+        method: "POST", headers: Object.assign({}, this.headers, { "Prefer": "resolution=merge-duplicates,return=minimal" }),
+        body: JSON.stringify({ id: item.id, person_id: item.personId || null, data: item }),
+      });
+    } catch {}
+  },
+
+  async remove(table, id) {
+    try {
+      await fetch(SUPABASE_URL + "/rest/v1/" + table + "?id=eq." + id, { method: "DELETE", headers: this.headers });
+    } catch {}
+  },
+
+  async getKV(key) {
+    try {
+      const r = await fetch(SUPABASE_URL + "/rest/v1/app_settings?key=eq." + key + "&select=data", { headers: this.headers });
+      if (!r.ok) return null;
+      const rows = await r.json();
+      return rows.length > 0 ? rows[0].data : null;
+    } catch { return null; }
+  },
+
+  async setKV(key, value) {
+    try {
+      await fetch(SUPABASE_URL + "/rest/v1/app_settings", {
+        method: "POST", headers: Object.assign({}, this.headers, { "Prefer": "resolution=merge-duplicates,return=minimal" }),
+        body: JSON.stringify({ key, data: value }),
+      });
+    } catch {}
+  },
+};
+
+/* LOCAL CACHE — Supabase syncs on load, reads are instant */
+const cache = { people: [], dogs: [], cats: [], visits: [], prices: null, completedActions: null, completedVisits: null, loaded: false };
+
+async function loadCache() {
+  const [people, dogs, cats, visits, prices, completedActions, completedVisits] = await Promise.all([
+    supa.getAll("people"), supa.getAll("dogs"), supa.getAll("cats"), supa.getAll("visits"),
+    supa.getKV("prices"), supa.getKV("completedActions"), supa.getKV("completedVisits"),
+  ]);
+  cache.people = people || [];
+  cache.dogs = dogs || [];
+  cache.cats = cats || [];
+  cache.visits = visits || [];
+  cache.prices = prices;
+  cache.completedActions = completedActions;
+  cache.completedVisits = completedVisits;
+  cache.loaded = true;
+}
+
+/* db interface — reads from cache (instant), writes to both cache + Supabase */
 const db = {
-  get: (k) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch { return null; } },
-  set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
-  getAll: (k) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : []; } catch { return []; } },
-  upsert: (k, item) => { const items = db.getAll(k); const i = items.findIndex(x => x.id === item.id); if (i >= 0) items[i] = item; else items.push(item); db.set(k, items); return item; },
-  remove: (k, id) => { db.set(k, db.getAll(k).filter(x => x.id !== id)); },
+  get: (k) => {
+    if (k === "prices") return cache.prices;
+    if (k === "completedActions") return cache.completedActions;
+    if (k === "completedVisits") return cache.completedVisits;
+    return null;
+  },
+  set: (k, v) => {
+    if (k === "people") { cache.people = v; v.forEach(function(item) { supa.upsert("people", item); }); return; }
+    if (k === "dogs") { cache.dogs = v; v.forEach(function(item) { supa.upsert("dogs", item); }); return; }
+    if (k === "cats") { cache.cats = v; v.forEach(function(item) { supa.upsert("cats", item); }); return; }
+    if (k === "visits") { cache.visits = v; v.forEach(function(item) { supa.upsert("visits", item); }); return; }
+    if (k === "prices") { cache.prices = v; supa.setKV("prices", v); return; }
+    if (k === "completedActions") { cache.completedActions = v; supa.setKV("completedActions", v); return; }
+    if (k === "completedVisits") { cache.completedVisits = v; supa.setKV("completedVisits", v); return; }
+  },
+  getAll: (k) => {
+    if (k === "people") return cache.people || [];
+    if (k === "dogs") return cache.dogs || [];
+    if (k === "cats") return cache.cats || [];
+    if (k === "visits") return cache.visits || [];
+    return [];
+  },
+  upsert: (k, item) => {
+    const arr = db.getAll(k);
+    const i = arr.findIndex(function(x) { return x.id === item.id; });
+    if (i >= 0) arr[i] = item; else arr.push(item);
+    if (k === "people") cache.people = arr;
+    if (k === "dogs") cache.dogs = arr;
+    if (k === "cats") cache.cats = arr;
+    if (k === "visits") cache.visits = arr;
+    supa.upsert(k, item);
+    return item;
+  },
+  remove: (k, id) => {
+    if (k === "people") cache.people = cache.people.filter(function(x) { return x.id !== id; });
+    if (k === "dogs") cache.dogs = cache.dogs.filter(function(x) { return x.id !== id; });
+    if (k === "cats") cache.cats = cache.cats.filter(function(x) { return x.id !== id; });
+    if (k === "visits") cache.visits = cache.visits.filter(function(x) { return x.id !== id; });
+    supa.remove(k, id);
+  },
 };
 
 const uid = () => Math.random().toString(36).slice(2, 10);
@@ -2666,7 +2769,23 @@ export default function App() {
   const [showNewEnquiry, setShowNewEnquiry] = useState(false);
   const [showAddClient, setShowAddClient] = useState(false);
   const [tick, setTick] = useState(0);
+  const [dbReady, setDbReady] = useState(false);
   const refresh = useCallback(function() { setTick(function(t) { return t + 1; }); }, []);
+
+  useEffect(function() {
+    loadCache().then(function() { setDbReady(true); });
+  }, []);
+
+  if (!dbReady) return (
+    <>
+      <style>{CSS}</style>
+      <div className="app-shell" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100dvh", gap: 16 }}>
+        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, letterSpacing: 3, color: "var(--purple)" }}>WALKS AND WHISKERS</div>
+        <Spinner large />
+        <div className="text-sm text-muted">Loading your data...</div>
+      </div>
+    </>
+  );
 
   if (showNewEnquiry) return (
     <>
