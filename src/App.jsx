@@ -127,14 +127,16 @@ const supa = {
       if (item.personId) body.person_id = item.personId;
       const r = await fetch(SUPABASE_URL + "/rest/v1/" + table, {
         method: "POST",
-        headers: Object.assign({}, this.headers, { "Prefer": "resolution=merge-duplicates,return=minimal" }),
+        headers: Object.assign({}, this.headers, { "Prefer": "resolution=merge-duplicates,return=representation" }),
         body: JSON.stringify(body),
       });
       if (!r.ok) {
         const txt = await r.text();
-        console.error("Supabase upsert failed on", table, r.status, txt);
+        console.error("SUPA FAIL", table, r.status, txt);
+      } else {
+        console.log("SUPA OK", table, item.id);
       }
-    } catch(e) { console.error("Supabase upsert error:", e); }
+    } catch(e) { console.error("SUPA ERR", table, e.message); }
   },
 
   async remove(table, id) {
