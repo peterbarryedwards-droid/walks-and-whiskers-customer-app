@@ -117,7 +117,8 @@ const supa = {
       const r = await fetch(SUPABASE_URL + "/rest/v1/" + table + "?select=*", { headers: this.headers });
       if (!r.ok) { const txt = await r.text(); console.error("Supabase getAll failed on", table, r.status, txt); return []; }
       const rows = await r.json();
-      return rows.map(function(row) { return row.data; });
+      if (rows.length > 0) console.log("SUPA READ", table, "first row keys:", Object.keys(rows[0]));
+      return rows.map(function(row) { return row.data || row; });
     } catch(e) { console.error("Supabase getAll error:", table, e); return []; }
   },
 
