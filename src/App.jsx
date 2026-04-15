@@ -446,8 +446,29 @@ function computeActions(people) {
     if (p) actions.push({ personId: p.id, type: "send_photo", label: "📸 Send a photo update to " + p.name, urgency: "medium", stage: p.stage });
   });
 
+  // Post-booking review reminder — last day of a booking or day after a single visit
+  const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = yesterday.toISOString().split("T")[0];
+  const recentlyEndedVisits = allVisits.filter(function(v) {
+    return (v.date === today || v.date === yesterdayStr) && v.status !== "cancelled" && !v.isMeetGreet;
+  });
+  // Group by person, find the last visit date per person
+  const lastVisitByPerson = {};
+  allVisits.filter(function(v) { return v.status !== "cancelled" && !v.isMeetGreet; }).forEach(function(v) {
+    if (!lastVisitByPerson[v.personId] || v.date > lastVisitByPerson[v.personId]) {
+      lastVisitByPerson[v.personId] = v.date;
+    }
+  });
+  recentlyEndedVisits.forEach(function(v) {
+    // Only fire if this is the LAST visit for that person (booking has ended)
+    if (lastVisitByPerson[v.personId] !== v.date) return;
+    const p = people.find(function(x) { return x.id === v.personId; });
+    if (!p) return;
+    if (actions.find(function(a) { return a.personId === v.personId && a.type === "post_booking_review"; })) return;
+    actions.push({ personId: v.personId, type: "post_booking_review", label: "✅ How did it go with " + p.name + "? Send a follow-up", urgency: "medium", stage: p.stage });
+  });
+
   for (const p of people) {
-    if (p.stage === "not_proceeding") continue;
     const msgs = p.messages || [];
     const lastOut = [...msgs].reverse().find(function(m) { return m.role === "freddie"; });
     const lastIn  = [...msgs].reverse().find(function(m) { return m.role === "client"; });
@@ -1926,6 +1947,8 @@ function NotesTab({ person, onUpdate }) {
   const [editingVal, setEditingVal] = useState("");
   const [editingNoteId, setEditingNoteId] = useState(null);
   const [editingNoteVal, setEditingNoteVal] = useState("");
+  const [notesCorrection, setNotesCorrection] = useState("");
+  const [notesCorrecting, setNotesCorrecting] = useState(false);
 
   const showToast = function(msg) { setToast(msg); setTimeout(function() { setToast(null); }, 3000); };
 
@@ -2046,6 +2069,30 @@ function NotesTab({ person, onUpdate }) {
     );
   };
 
+  const applyNotesCorrection = async function() {
+    if (!notesCorrection.trim()) return;
+    setNotesCorrecting(true);
+    try {
+      const currentNotes = { jobNotes: person.jobNotes, schedule: person.schedule, houseNotes: person.houseNotes, accessNotes: person.accessNotes, scheduleNotes: person.scheduleNotes };
+      const prompt = "Current job notes for " + (person.name || "client") + ":\n" + JSON.stringify(currentNotes) + "\n\nFreddie wants to change: \"" + notesCorrection + "\"\n\nReturn ONLY valid JSON with updated fields:\n{\"jobNotes\":null,\"schedule\":null,\"houseNotes\":null,\"accessNotes\":null,\"scheduleNotes\":null}\n\nOnly include fields that changed. null means no change.";
+      const result = await callClaudeJSON(prompt);
+      const all = db.getAll("people");
+      const idx = all.findIndex(function(p) { return p.id === person.id; });
+      if (idx >= 0) {
+        if (result.jobNotes) all[idx].jobNotes = result.jobNotes;
+        if (result.schedule) all[idx].schedule = result.schedule;
+        if (result.houseNotes) all[idx].houseNotes = result.houseNotes;
+        if (result.accessNotes) all[idx].accessNotes = result.accessNotes;
+        if (result.scheduleNotes) all[idx].scheduleNotes = result.scheduleNotes;
+        db.set("people", all);
+      }
+      setNotesCorrection("");
+      if (onUpdate) onUpdate();
+      showToast("Updated ✓");
+    } catch(e) { showToast("Could not update — try again"); }
+    setNotesCorrecting(false);
+  };
+
   const hasStructured = jobNotes || schedule || houseNotes || person.accessNotes;
 
   return (
@@ -2107,6 +2154,16 @@ function NotesTab({ person, onUpdate }) {
           {!hasStructured && profileNotes.length === 0 && (
             <div className="empty-state"><div className="icon">📝</div><h3>No notes yet</h3><p>Paste a meet and greet summary or any notes to build up the record</p></div>
           )}
+
+          <div className="section-label" style={{ marginTop: 24 }}>CHANGE SOMETHING?</div>
+          <div className="card" style={{ background: "var(--card2)", borderColor: "var(--border2)" }}>
+            <div className="text-sm text-muted mb-8">Tell me what to update — e.g. "back door code is 1234" or "feeding is twice a day not once"</div>
+            <textarea className="input" rows={2} value={notesCorrection} onChange={function(e) { setNotesCorrection(e.target.value); }} placeholder="What needs changing?" />
+            <button className="btn btn-primary mt-8" disabled={!notesCorrection.trim() || notesCorrecting} style={{ opacity: notesCorrection.trim() ? 1 : 0.4 }} onClick={applyNotesCorrection}>
+              {notesCorrecting ? <Spinner /> : "Update Notes →"}
+            </button>
+          </div>
+          <div style={{ height: 24 }} />
         </div>
       ) : (
         <div style={{ padding: "12px 16px 24px" }}>
@@ -2141,8 +2198,12 @@ function PersonDetail({ personId, onBack, onUpdate }) {
   const [datePasteText, setDatePasteText] = useState("");
   const [meetPasteText, setMeetPasteText] = useState("");
   const [datePasteLoading, setDatePasteLoading] = useState(false);
-  const [parsedDates, setParsedDates] = useState(null);   // for bookings
-  const [parsedMeet, setParsedMeet] = useState(null);     // for meets
+  const [parsedDates, setParsedDates] = useState(null);
+  const [parsedMeet, setParsedMeet] = useState(null);
+  const [profileCorrection, setProfileCorrection] = useState("");
+  const [profileCorrecting, setProfileCorrecting] = useState(false);
+  const [notesCorrection, setNotesCorrection] = useState("");
+  const [notesCorrecting, setNotesCorrecting] = useState(false);
 
   const person = db.getAll("people").find(function(p) { return p.id === personId; });
   const dogs = db.getAll("dogs").filter(function(d) { return d.personId === personId; });
@@ -2152,6 +2213,66 @@ function PersonDetail({ personId, onBack, onUpdate }) {
   if (!person) return <div><BackBtn onBack={onBack} /><div style={{ padding: 24 }} className="text-muted">Not found</div></div>;
 
   const refresh = function() { setTick(function(t) { return t + 1; }); if (onUpdate) onUpdate(); };
+
+  const applyProfileCorrection = async function() {
+    if (!profileCorrection.trim()) return;
+    setProfileCorrecting(true);
+    try {
+      const dogs = db.getAll("dogs").filter(function(d) { return d.personId === personId; });
+      const cats = db.getAll("cats").filter(function(c) { return c.personId === personId; });
+      const currentProfile = JSON.stringify({ name: person.name, phone: person.phone, email: person.email, address: person.address, postcode: person.postcode, platform: person.platform, rate: person.rate, accessNotes: person.accessNotes, serviceType: person.serviceType, pets: dogs.concat(cats).map(function(p) { return { name: p.name, breed: p.breed, age: p.age, personality: p.personality }; }) });
+      const prompt = "Current client profile:\n" + currentProfile + "\n\nFreddie wants to change: \"" + profileCorrection + "\"\n\nReturn ONLY valid JSON with the updated fields:\n{\"name\":null,\"phone\":null,\"email\":null,\"address\":null,\"postcode\":null,\"platform\":null,\"rate\":null,\"accessNotes\":null,\"serviceType\":null,\"petUpdates\":[{\"name\":\"pet name\",\"field\":\"field\",\"value\":\"new value\"}]}\n\nOnly include fields that actually changed. null means no change.";
+      const result = await callClaudeJSON(prompt);
+      const all = db.getAll("people");
+      const idx = all.findIndex(function(p) { return p.id === personId; });
+      if (idx >= 0) {
+        if (result.name) all[idx].name = result.name;
+        if (result.phone) all[idx].phone = result.phone;
+        if (result.email) all[idx].email = result.email;
+        if (result.address) all[idx].address = result.address;
+        if (result.postcode) all[idx].postcode = result.postcode;
+        if (result.platform) all[idx].platform = result.platform;
+        if (result.rate) all[idx].rate = result.rate;
+        if (result.accessNotes) all[idx].accessNotes = result.accessNotes;
+        if (result.serviceType) all[idx].serviceType = result.serviceType;
+        db.set("people", all);
+      }
+      if (result.petUpdates && result.petUpdates.length > 0) {
+        const allDogs = db.getAll("dogs");
+        result.petUpdates.forEach(function(upd) {
+          const di = allDogs.findIndex(function(d) { return d.personId === personId && d.name && d.name.toLowerCase() === (upd.name || "").toLowerCase(); });
+          if (di >= 0 && upd.field && upd.value) allDogs[di][upd.field] = upd.value;
+        });
+        db.set("dogs", allDogs);
+      }
+      setProfileCorrection("");
+      refresh();
+    } catch(e) { console.error("Profile correction failed:", e); }
+    setProfileCorrecting(false);
+  };
+
+  const applyNotesCorrection = async function() {
+    if (!notesCorrection.trim()) return;
+    setNotesCorrecting(true);
+    try {
+      const currentNotes = JSON.stringify({ jobNotes: person.jobNotes, schedule: person.schedule, houseNotes: person.houseNotes, accessNotes: person.accessNotes, scheduleNotes: person.scheduleNotes });
+      const prompt = "Current job notes:\n" + currentNotes + "\n\nFreddie wants to change: \"" + notesCorrection + "\"\n\nReturn ONLY valid JSON with the updated fields:\n{\"jobNotes\":null,\"schedule\":null,\"houseNotes\":null,\"accessNotes\":null,\"scheduleNotes\":null}\n\nOnly include fields that changed. null means no change.";
+      const result = await callClaudeJSON(prompt);
+      const all = db.getAll("people");
+      const idx = all.findIndex(function(p) { return p.id === personId; });
+      if (idx >= 0) {
+        if (result.jobNotes) all[idx].jobNotes = result.jobNotes;
+        if (result.schedule) all[idx].schedule = result.schedule;
+        if (result.houseNotes) all[idx].houseNotes = result.houseNotes;
+        if (result.accessNotes) all[idx].accessNotes = result.accessNotes;
+        if (result.scheduleNotes) all[idx].scheduleNotes = result.scheduleNotes;
+        db.set("people", all);
+      }
+      setNotesCorrection("");
+      refresh();
+    } catch(e) { console.error("Notes correction failed:", e); }
+    setNotesCorrecting(false);
+  };
 
   const togglePaid = function(visitId) {
     const all = db.getAll("visits");
@@ -2307,7 +2428,7 @@ function PersonDetail({ personId, onBack, onUpdate }) {
 
       {/* Four tabs */}
       <div className="pill-tabs mt-4 mb-4">
-        {[["profile","Profile"],["bookings","Bookings"],["notes","Notes"],["paste","Smart Paste"],["messages","Messages"]].map(function(t) {
+        {[["profile","Profile"],["notes","Notes"],["paste","Smart Paste"],["bookings","Bookings"],["messages","Messages"]].map(function(t) {
           return <button key={t[0]} className={"pill-tab" + (activeTab === t[0] ? " active" : "")} onClick={function() { setActiveTab(t[0]); if (t[0] !== "bookings") setShowBookingForm(false); }}>{t[1]}</button>;
         })}
       </div>
@@ -2372,6 +2493,15 @@ function PersonDetail({ personId, onBack, onUpdate }) {
           <div className="btn-row mt-4">
             <button className="btn btn-ghost btn-sm" onClick={function() { setSelectedDog({ id: uid(), personId, name: "", breed: "", age: "", size: "", goodWithDogs: "", goodOnLead: "", healthIssues: "No", healthNotes: "", spooks: "", vet: "", vetPhone: "", personality: "", meetGreetResult: "" }); }}>+ Add Dog</button>
             <button className="btn btn-ghost btn-sm" onClick={function() { setSelectedCat({ id: uid(), personId, name: "", age: "", indoorOutdoor: "", feedingRoutine: "", litterNotes: "", medication: "No", medicationNotes: "", personality: "" }); }}>+ Add Cat</button>
+          </div>
+
+          <div className="section-label" style={{ marginTop: 24 }}>CHANGE SOMETHING?</div>
+          <div className="card" style={{ background: "var(--card2)", borderColor: "var(--border2)" }}>
+            <div className="text-sm text-muted mb-8">Tell me what to update — e.g. "phone is 07700 123456" or "Molly is a Labrador not a Spaniel"</div>
+            <textarea className="input" rows={2} value={profileCorrection} onChange={function(e) { setProfileCorrection(e.target.value); }} placeholder="What needs changing?" />
+            <button className="btn btn-primary mt-8" disabled={!profileCorrection.trim() || profileCorrecting} style={{ opacity: profileCorrection.trim() ? 1 : 0.4 }} onClick={applyProfileCorrection}>
+              {profileCorrecting ? <Spinner /> : "Update Profile →"}
+            </button>
           </div>
           <div style={{ height: 24 }} />
         </div>
@@ -2659,10 +2789,11 @@ function TabToday({ onOpenPerson }) {
       <div className="section-label">TO DO</div>
       {(function() {
         // Merge computed actions with stored actions from Smart Paste
-        const storedActions = db.get("storedActions") || [];
+        const rawStored = db.get("storedActions");
+        const storedActions = Array.isArray(rawStored) ? rawStored : [];
         const todayDate = todayStr();
-        const dueToday = storedActions.filter(function(a) { return !a.done && (!a.due || a.due <= todayDate); });
-        const allActions = actions.concat(dueToday.map(function(a) { return { personId: a.personId, type: a.type, label: a.description, urgency: a.urgency, stage: "", storedId: a.id, due: a.due }; }));
+        const dueToday = storedActions.filter(function(a) { return a && !a.done && (!a.due || a.due <= todayDate); });
+        const allActions = actions.concat(dueToday.map(function(a) { return { personId: a.personId, type: a.type, label: a.description, urgency: a.urgency || "medium", stage: "", storedId: a.id, due: a.due }; }));
         if (allActions.length === 0) return <div style={{ padding: "8px 16px 4px" }}><div className="text-sm text-muted">All caught up 🎉</div></div>;
         return allActions.map(function(action) {
           const actionId = action.storedId || (action.personId + "-" + action.type);
