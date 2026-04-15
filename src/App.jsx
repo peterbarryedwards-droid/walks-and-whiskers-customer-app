@@ -53,11 +53,11 @@ const CSS = `
   .chip.ay { border-color: var(--yellow); background: rgba(253,203,110,0.1); color: var(--yellow); }
   .chip-row { display: flex; gap: 8px; flex-wrap: wrap; }
   .badge { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 10px; font-size: 11px; font-weight: 600; }
-  .badge-purple { background: rgba(108,92,231,0.18); color: var(--purple); }
-  .badge-green { background: rgba(0,184,148,0.15); color: var(--green); }
-  .badge-orange { background: rgba(225,112,85,0.15); color: var(--orange); }
-  .badge-yellow { background: rgba(253,203,110,0.12); color: var(--yellow); }
-  .badge-muted { background: rgba(136,144,176,0.12); color: var(--muted); }
+  .badge-purple { background: rgba(108,92,231,0.12); color: #a89cf7; }
+  .badge-green { background: rgba(0,184,148,0.1); color: #00c9a0; }
+  .badge-orange { background: rgba(225,112,85,0.12); color: #f0856a; }
+  .badge-yellow { background: rgba(253,203,110,0.1); color: #fdd97e; }
+  .badge-muted { background: rgba(136,144,176,0.1); color: #9aa0b8; }
   .check-row { display: flex; align-items: flex-start; gap: 12px; }
   .check-box { width: 26px; height: 26px; min-width: 26px; border-radius: 8px; border: 2px solid var(--border2); background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; -webkit-tap-highlight-color: transparent; flex-shrink: 0; margin-top: 1px; }
   .check-box.done { background: var(--green); border-color: var(--green); }
@@ -422,6 +422,14 @@ function parseSections(text) {
 function computeActions(people) {
   const actions = [];
   const allVisits = db.getAll("visits");
+  const today = todayStr();
+
+  // Photo reminders — for any visit today, add a send photo reminder
+  const todayVisits = allVisits.filter(function(v) { return v.date === today && v.status !== "cancelled" && v.status !== "completed" && !v.isMeetGreet; });
+  todayVisits.forEach(function(v) {
+    const p = people.find(function(x) { return x.id === v.personId; });
+    if (p) actions.push({ personId: p.id, type: "send_photo", label: "📸 Send a photo update to " + p.name, urgency: "medium", stage: p.stage });
+  });
 
   for (const p of people) {
     if (p.stage === "not_proceeding") continue;
@@ -453,18 +461,32 @@ function computeActions(people) {
       actions.push({ personId: p.id, type: "re_engage", label: "Re-engage " + p.name + " — gone quiet", urgency: "low", stage: p.stage });
     }
 
-    // Belt and braces: scan last few messages for booking/meet confirmation not yet in calendar
-    const personVisits = allVisits.filter(function(v) { return v.personId === p.id; });
+    // Keys/details follow-up — detect from messages and notes
+    const allText = msgs.map(function(m) { return (m.text || m.draft || m.manual || "").toLowerCase(); }).join(" ");
+    const hasKeysPhrase = allText.indexOf("keys") !== -1 || allText.indexOf("sort out") !== -1 || allText.indexOf("closer to the time") !== -1 || allText.indexOf("nearer the time") !== -1;
+    const personVisits = allVisits.filter(function(v) { return v.personId === p.id && v.status !== "cancelled"; });
+    const upcomingVisits = personVisits.filter(function(v) { return v.date >= today; });
+    if (hasKeysPhrase && upcomingVisits.length > 0 && p.stage === "active") {
+      const firstDate = upcomingVisits[0].date;
+      const daysUntil = Math.floor((new Date(firstDate).getTime() - Date.now()) / MS_PER_DAY);
+      if (daysUntil <= 14 && daysUntil > 0) {
+        if (!actions.find(function(a) { return a.personId === p.id && a.type === "keys_follow_up"; })) {
+          actions.push({ personId: p.id, type: "keys_follow_up", label: "Sort keys and details with " + p.name + " — booking is in " + daysUntil + " days", urgency: "high", stage: p.stage });
+        }
+      }
+    }
+
+    // Belt and braces: scan messages for unactioned booking/meet keywords
     const lastClientMsg = lastIn ? (lastIn.text || "").toLowerCase() : "";
     const lastFreddieMsg = lastOut ? (lastOut.draft || lastOut.manual || lastOut.text || "").toLowerCase() : "";
     const combinedRecent = lastClientMsg + " " + lastFreddieMsg;
     const hasBookingKeywords = combinedRecent.indexOf("happy to book") !== -1 || combinedRecent.indexOf("go ahead") !== -1 || combinedRecent.indexOf("confirmed") !== -1 || combinedRecent.indexOf("all booked") !== -1 || combinedRecent.indexOf("see you on") !== -1 || combinedRecent.indexOf("see you at") !== -1;
     const hasMeetKeywords = combinedRecent.indexOf("meet and greet") !== -1 || combinedRecent.indexOf("meet up") !== -1 || combinedRecent.indexOf("come and meet") !== -1 || combinedRecent.indexOf("pop over") !== -1;
-    const hasNoUpcomingBooking = !personVisits.some(function(v) { return !v.isMeetGreet && v.date >= todayStr(); });
+    const hasNoUpcomingBooking = !personVisits.some(function(v) { return !v.isMeetGreet && v.date >= today; });
     const hasNoMeet = !personVisits.some(function(v) { return v.isMeetGreet; });
     if (hasBookingKeywords && hasNoUpcomingBooking && p.stage !== "new_enquiry") {
       if (!actions.find(function(a) { return a.personId === p.id && a.type === "confirm_booking"; })) {
-        actions.push({ personId: p.id, type: "add_booking", label: "Add booking for " + p.name + " — looks confirmed", urgency: "high", stage: p.stage });
+        actions.push({ personId: p.id, type: "add_booking", label: "Add booking for " + p.name + " — looks confirmed in messages", urgency: "high", stage: p.stage });
       }
     }
     if (hasMeetKeywords && hasNoMeet && p.stage !== "active") {
@@ -531,7 +553,7 @@ function parseBulkDates(dateStr) {
 /* SMALL COMPONENTS */
 function StagePill({ stageId }) {
   const s = STAGE_MAP[stageId] || { label: stageId, color: "#555" };
-  return <span className="stage-pill" style={{ background: s.color + "22", color: s.color }}>{s.label}</span>;
+  return <span className="stage-pill" style={{ background: s.color + "18", color: s.color + "cc" }}>{s.label}</span>;
 }
 function Spinner({ large }) {
   return <div className={"spinner" + (large ? " spinner-lg" : "")} />;
@@ -1577,6 +1599,7 @@ function SmartPaste({ existingPerson, onSave, onBack }) {
       houseNotes: result.house_notes || existing.houseNotes || "",
       scheduleNotes: result.schedule_notes || existing.scheduleNotes || "",
       accessNotes: result.access_notes || existing.accessNotes || "",
+      aiSummary: result.summary || existing.aiSummary || "",
       createdAt: existing.createdAt || nowStr(),
       lastActionDate: nowStr(),
       messages: existing.messages || [],
@@ -1626,13 +1649,26 @@ function SmartPaste({ existingPerson, onSave, onBack }) {
       });
     });
 
+    // Auto-add follow-up actions for tentative bookings
+    const autoActions = result.actions ? [...result.actions] : [];
+    const tentativeBookings = (result.bookings || []).filter(function(b) { return b.status === "tentative"; });
+    if (tentativeBookings.length > 0) {
+      const earliestTentative = tentativeBookings.sort(function(a, b) { return (a.date || "").localeCompare(b.date || ""); })[0];
+      const hasChasUp = autoActions.find(function(a) { return a.type === "chase_up" || a.type === "follow_up"; });
+      if (!hasChasUp) {
+        const dueDate = new Date();
+        dueDate.setDate(dueDate.getDate() + 30);
+        autoActions.push({ type: "chase_up", description: "Chase " + (person.name || "client") + " to confirm tentative booking", urgency: "medium", due: dueDate.toISOString().split("T")[0] });
+      }
+    }
+
     // Save actions to storedActions so they appear on Today page
-    if (result.actions && result.actions.length > 0) {
-      const existing = db.get("storedActions") || [];
-      const newActions = result.actions.map(function(a) {
+    if (autoActions.length > 0) {
+      const existingActions = db.get("storedActions") || [];
+      const newActions = autoActions.map(function(a) {
         return { id: uid(), personId, type: a.type, description: a.description, urgency: a.urgency, due: a.due || null, done: false, createdAt: nowStr() };
       });
-      db.set("storedActions", existing.concat(newActions));
+      db.set("storedActions", existingActions.concat(newActions));
     }
 
     showToast("Saved!");
@@ -1975,6 +2011,15 @@ function NotesTab({ person, onUpdate }) {
             <EditField icon="🏡" label="House notes" field="houseNotes" value={houseNotes} />
           </div>
 
+          {person.aiSummary && (
+            <div>
+              <div className="section-label">AI Summary</div>
+              <div className="card" style={{ background: "rgba(108,92,231,0.06)", borderColor: "rgba(108,92,231,0.2)" }}>
+                <div className="text-sm" style={{ lineHeight: 1.7, color: "#c8d0f0" }}>{person.aiSummary}</div>
+              </div>
+            </div>
+          )}
+
           {profileNotes.length > 0 && (
             <div>
               <div className="section-label">Raw Notes</div>
@@ -2072,6 +2117,8 @@ function PersonDetail({ personId, onBack, onUpdate }) {
     db.set("dogs", db.getAll("dogs").filter(function(d) { return d.personId !== personId; }));
     db.set("cats", db.getAll("cats").filter(function(c) { return c.personId !== personId; }));
     db.set("visits", db.getAll("visits").filter(function(v) { return v.personId !== personId; }));
+    const stored = db.get("storedActions") || [];
+    db.set("storedActions", stored.filter(function(a) { return a.personId !== personId; }));
     onBack();
   };
 
