@@ -114,11 +114,14 @@ const supa = {
 
   async getAll(table) {
     try {
-      const r = await fetch(SUPABASE_URL + "/rest/v1/" + table + "?select=*", { headers: this.headers });
+      const r = await fetch(SUPABASE_URL + "/rest/v1/" + table + "?select=data", { headers: this.headers });
       if (!r.ok) { const txt = await r.text(); console.error("Supabase getAll failed on", table, r.status, txt); return []; }
       const rows = await r.json();
-      if (rows.length > 0) console.log("SUPA READ", table, "first row keys:", Object.keys(rows[0]));
-      return rows.map(function(row) { return row.data || row; });
+      return rows.map(function(row) {
+        if (!row.data) return null;
+        if (typeof row.data === "string") { try { return JSON.parse(row.data); } catch { return null; } }
+        return row.data;
+      }).filter(Boolean);
     } catch(e) { console.error("Supabase getAll error:", table, e); return []; }
   },
 
@@ -128,16 +131,11 @@ const supa = {
       if (item.personId) body.person_id = item.personId;
       const r = await fetch(SUPABASE_URL + "/rest/v1/" + table, {
         method: "POST",
-        headers: Object.assign({}, this.headers, { "Prefer": "resolution=merge-duplicates,return=representation" }),
+        headers: Object.assign({}, this.headers, { "Prefer": "resolution=merge-duplicates,return=minimal" }),
         body: JSON.stringify(body),
       });
-      if (!r.ok) {
-        const txt = await r.text();
-        console.error("SUPA FAIL", table, r.status, txt);
-      } else {
-        console.log("SUPA OK", table, item.id);
-      }
-    } catch(e) { console.error("SUPA ERR", table, e.message); }
+      if (!r.ok) { const txt = await r.text(); console.error("Supabase upsert failed", table, r.status, txt); }
+    } catch(e) { console.error("Supabase upsert error", table, e.message); }
   },
 
   async remove(table, id) {
