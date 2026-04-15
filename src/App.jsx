@@ -159,18 +159,36 @@ const supa = {
 const cache = { people: [], dogs: [], cats: [], visits: [], prices: null, completedActions: null, completedVisits: null, loaded: false };
 
 async function loadCache() {
-  const [people, dogs, cats, visits, prices, completedActions, completedVisits] = await Promise.all([
-    supa.getAll("people"), supa.getAll("dogs"), supa.getAll("cats"), supa.getAll("visits"),
-    supa.getKV("prices"), supa.getKV("completedActions"), supa.getKV("completedVisits"),
-  ]);
-  cache.people = people || [];
-  cache.dogs = dogs || [];
-  cache.cats = cats || [];
-  cache.visits = visits || [];
-  cache.prices = prices;
-  cache.completedActions = completedActions;
-  cache.completedVisits = completedVisits;
-  cache.loaded = true;
+  // Debug — log whether env vars are present
+  if (!SUPABASE_URL || !SUPABASE_KEY) {
+    console.error("Supabase env vars missing — URL:", SUPABASE_URL ? "OK" : "MISSING", "KEY:", SUPABASE_KEY ? "OK" : "MISSING");
+    cache.people = []; cache.dogs = []; cache.cats = []; cache.visits = [];
+    cache.prices = null; cache.completedActions = null; cache.completedVisits = null;
+    cache.loaded = true;
+    cache.error = "Supabase not configured";
+    return;
+  }
+  try {
+    const [people, dogs, cats, visits, prices, completedActions, completedVisits] = await Promise.all([
+      supa.getAll("people"), supa.getAll("dogs"), supa.getAll("cats"), supa.getAll("visits"),
+      supa.getKV("prices"), supa.getKV("completedActions"), supa.getKV("completedVisits"),
+    ]);
+    cache.people = people || [];
+    cache.dogs = dogs || [];
+    cache.cats = cats || [];
+    cache.visits = visits || [];
+    cache.prices = prices;
+    cache.completedActions = completedActions;
+    cache.completedVisits = completedVisits;
+    cache.loaded = true;
+    cache.error = null;
+    console.log("Supabase loaded — people:", cache.people.length, "visits:", cache.visits.length);
+  } catch (e) {
+    console.error("Supabase load failed:", e);
+    cache.people = []; cache.dogs = []; cache.cats = []; cache.visits = [];
+    cache.loaded = true;
+    cache.error = String(e);
+  }
 }
 
 /* db interface — reads from cache (instant), writes to both cache + Supabase */
@@ -2774,10 +2792,14 @@ export default function App() {
   const [showAddClient, setShowAddClient] = useState(false);
   const [tick, setTick] = useState(0);
   const [dbReady, setDbReady] = useState(false);
+  const [dbError, setDbError] = useState(null);
   const refresh = useCallback(function() { setTick(function(t) { return t + 1; }); }, []);
 
   useEffect(function() {
-    loadCache().then(function() { setDbReady(true); });
+    loadCache().then(function() {
+      setDbError(cache.error || null);
+      setDbReady(true);
+    });
   }, []);
 
   if (!dbReady) return (
@@ -2787,6 +2809,24 @@ export default function App() {
         <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, letterSpacing: 3, color: "var(--purple)" }}>WALKS AND WHISKERS</div>
         <Spinner large />
         <div className="text-sm text-muted">Loading your data...</div>
+      </div>
+    </>
+  );
+
+  if (dbError) return (
+    <>
+      <style>{CSS}</style>
+      <div className="app-shell" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100dvh", gap: 16, padding: "0 24px", textAlign: "center" }}>
+        <div style={{ fontSize: 44 }}>⚠️</div>
+        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "var(--orange)" }}>DATABASE NOT CONNECTED</div>
+        <div className="text-sm text-muted">The Supabase environment variables aren't reaching the app.</div>
+        <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: "var(--radius-sm)", padding: "12px 16px", fontSize: 12, fontFamily: "monospace", color: "var(--muted)", maxWidth: 340, wordBreak: "break-all", textAlign: "left" }}>
+          <div>URL: {SUPABASE_URL ? "✓ present" : "✗ MISSING"}</div>
+          <div>KEY: {SUPABASE_KEY ? "✓ present" : "✗ MISSING"}</div>
+          <div style={{ marginTop: 8, color: "var(--orange)" }}>{dbError}</div>
+        </div>
+        <div className="text-sm text-muted">Check Vercel → Settings → Environment Variables, then redeploy.</div>
+        <button className="btn btn-primary" style={{ maxWidth: 240 }} onClick={function() { setDbError(null); setDbReady(false); loadCache().then(function() { setDbError(cache.error || null); setDbReady(true); }); }}>Retry</button>
       </div>
     </>
   );
