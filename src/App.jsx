@@ -115,19 +115,26 @@ const supa = {
   async getAll(table) {
     try {
       const r = await fetch(SUPABASE_URL + "/rest/v1/" + table + "?select=*", { headers: this.headers });
-      if (!r.ok) return [];
+      if (!r.ok) { const txt = await r.text(); console.error("Supabase getAll failed on", table, r.status, txt); return []; }
       const rows = await r.json();
       return rows.map(function(row) { return row.data; });
-    } catch { return []; }
+    } catch(e) { console.error("Supabase getAll error:", table, e); return []; }
   },
 
   async upsert(table, item) {
     try {
-      await fetch(SUPABASE_URL + "/rest/v1/" + table, {
-        method: "POST", headers: Object.assign({}, this.headers, { "Prefer": "resolution=merge-duplicates,return=minimal" }),
-        body: JSON.stringify({ id: item.id, person_id: item.personId || null, data: item }),
+      const body = { id: item.id, data: item };
+      if (item.personId) body.person_id = item.personId;
+      const r = await fetch(SUPABASE_URL + "/rest/v1/" + table, {
+        method: "POST",
+        headers: Object.assign({}, this.headers, { "Prefer": "resolution=merge-duplicates,return=minimal" }),
+        body: JSON.stringify(body),
       });
-    } catch {}
+      if (!r.ok) {
+        const txt = await r.text();
+        console.error("Supabase upsert failed on", table, r.status, txt);
+      }
+    } catch(e) { console.error("Supabase upsert error:", e); }
   },
 
   async remove(table, id) {
