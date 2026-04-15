@@ -164,22 +164,19 @@ const supa = {
 };
 
 /* LOCAL CACHE — Supabase syncs on load, reads are instant */
-const cache = { people: [], dogs: [], cats: [], visits: [], prices: null, completedActions: null, completedVisits: null, loaded: false };
+const cache = { people: [], dogs: [], cats: [], visits: [], prices: null, completedActions: null, completedVisits: null, storedActions: null, loaded: false };
 
 async function loadCache() {
-  // Debug — log whether env vars are present
   if (!SUPABASE_URL || !SUPABASE_KEY) {
     console.error("Supabase env vars missing — URL:", SUPABASE_URL ? "OK" : "MISSING", "KEY:", SUPABASE_KEY ? "OK" : "MISSING");
     cache.people = []; cache.dogs = []; cache.cats = []; cache.visits = [];
-    cache.prices = null; cache.completedActions = null; cache.completedVisits = null;
-    cache.loaded = true;
-    cache.error = "Supabase not configured";
-    return;
+    cache.prices = null; cache.completedActions = null; cache.completedVisits = null; cache.storedActions = null;
+    cache.loaded = true; cache.error = "Supabase not configured"; return;
   }
   try {
-    const [people, dogs, cats, visits, prices, completedActions, completedVisits] = await Promise.all([
+    const [people, dogs, cats, visits, prices, completedActions, completedVisits, storedActions] = await Promise.all([
       supa.getAll("people"), supa.getAll("dogs"), supa.getAll("cats"), supa.getAll("visits"),
-      supa.getKV("prices"), supa.getKV("completedActions"), supa.getKV("completedVisits"),
+      supa.getKV("prices"), supa.getKV("completedActions"), supa.getKV("completedVisits"), supa.getKV("storedActions"),
     ]);
     cache.people = people || [];
     cache.dogs = dogs || [];
@@ -188,14 +185,13 @@ async function loadCache() {
     cache.prices = prices;
     cache.completedActions = completedActions;
     cache.completedVisits = completedVisits;
-    cache.loaded = true;
-    cache.error = null;
+    cache.storedActions = storedActions;
+    cache.loaded = true; cache.error = null;
     console.log("Supabase loaded — people:", cache.people.length, "visits:", cache.visits.length);
   } catch (e) {
     console.error("Supabase load failed:", e);
     cache.people = []; cache.dogs = []; cache.cats = []; cache.visits = [];
-    cache.loaded = true;
-    cache.error = String(e);
+    cache.loaded = true; cache.error = String(e);
   }
 }
 
@@ -205,16 +201,35 @@ const db = {
     if (k === "prices") return cache.prices;
     if (k === "completedActions") return cache.completedActions;
     if (k === "completedVisits") return cache.completedVisits;
+    if (k === "storedActions") return cache.storedActions;
     return null;
   },
   set: (k, v) => {
-    if (k === "people") { cache.people = v; v.forEach(function(item) { supa.upsert("people", item); }); return; }
-    if (k === "dogs") { cache.dogs = v; v.forEach(function(item) { supa.upsert("dogs", item); }); return; }
-    if (k === "cats") { cache.cats = v; v.forEach(function(item) { supa.upsert("cats", item); }); return; }
-    if (k === "visits") { cache.visits = v; v.forEach(function(item) { supa.upsert("visits", item); }); return; }
+    if (k === "people") {
+      // Delete removed items from Supabase
+      const removed = cache.people.filter(function(old) { return !v.find(function(n) { return n.id === old.id; }); });
+      removed.forEach(function(item) { supa.remove("people", item.id); });
+      cache.people = v; v.forEach(function(item) { supa.upsert("people", item); }); return;
+    }
+    if (k === "dogs") {
+      const removed = cache.dogs.filter(function(old) { return !v.find(function(n) { return n.id === old.id; }); });
+      removed.forEach(function(item) { supa.remove("dogs", item.id); });
+      cache.dogs = v; v.forEach(function(item) { supa.upsert("dogs", item); }); return;
+    }
+    if (k === "cats") {
+      const removed = cache.cats.filter(function(old) { return !v.find(function(n) { return n.id === old.id; }); });
+      removed.forEach(function(item) { supa.remove("cats", item.id); });
+      cache.cats = v; v.forEach(function(item) { supa.upsert("cats", item); }); return;
+    }
+    if (k === "visits") {
+      const removed = cache.visits.filter(function(old) { return !v.find(function(n) { return n.id === old.id; }); });
+      removed.forEach(function(item) { supa.remove("visits", item.id); });
+      cache.visits = v; v.forEach(function(item) { supa.upsert("visits", item); }); return;
+    }
     if (k === "prices") { cache.prices = v; supa.setKV("prices", v); return; }
     if (k === "completedActions") { cache.completedActions = v; supa.setKV("completedActions", v); return; }
     if (k === "completedVisits") { cache.completedVisits = v; supa.setKV("completedVisits", v); return; }
+    if (k === "storedActions") { cache.storedActions = v; supa.setKV("storedActions", v); return; }
   },
   getAll: (k) => {
     if (k === "people") return cache.people || [];
@@ -1476,6 +1491,9 @@ function SmartPaste({ existingPerson, onSave, onBack }) {
   const [replyText, setReplyText] = useState("");
   const [tweakInput, setTweakInput] = useState("");
   const [tweaking, setTweaking] = useState(false);
+  const [correctionText, setCorrectionText] = useState("");
+  const [correcting, setCorrecting] = useState(false);
+  const [clarificationAnswers, setClarificationAnswers] = useState({});
 
   const showToast = function(msg) { setToast(msg); setTimeout(function() { setToast(null); }, 3000); };
 
@@ -1675,6 +1693,31 @@ function SmartPaste({ existingPerson, onSave, onBack }) {
     return personId;
   };
 
+  const applyCorrection = async function() {
+    if (!correctionText.trim()) return;
+    setCorrecting(true);
+    try {
+      const clarAnswers = Object.entries(clarificationAnswers).map(function(e) { return "Q: " + e[0] + " A: " + e[1]; }).join("\n");
+      const correctionPrompt = buildPrompt(pasteText) +
+        "\n\nPREVIOUSLY EXTRACTED:\n" + JSON.stringify(result, null, 2) +
+        "\n\nFREDDIE'S CORRECTION / ADDITIONAL INFO:\n" + correctionText +
+        (clarAnswers ? "\n\nANSWERS TO CLARIFICATION QUESTIONS:\n" + clarAnswers : "") +
+        "\n\nPlease re-extract with this correction applied. Return updated JSON only.";
+      const raw = await callClaude(correctionPrompt, 4000);
+      const clean = raw.replace(new RegExp("```json|```", "g"), "").trim();
+      const parsed = JSON.parse(clean);
+      setResult(parsed);
+      setReplyText(parsed.suggested_reply || replyText);
+      setCorrectionText("");
+      setClarificationAnswers({});
+      showToast("Updated ✓");
+    } catch(e) {
+      console.error("Correction failed:", e);
+      showToast("Could not update — try again");
+    }
+    setCorrecting(false);
+  };
+
   const tweakReply = async function() {
     if (!tweakInput.trim()) return;
     setTweaking(true);
@@ -1825,7 +1868,8 @@ function SmartPaste({ existingPerson, onSave, onBack }) {
                 return (
                   <div key={i} className="card" style={{ background: "rgba(253,203,110,0.08)", borderColor: "rgba(253,203,110,0.3)" }}>
                     <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>{"❓ " + c.question}</div>
-                    <div className="text-sm text-muted">{c.context}</div>
+                    <div className="text-sm text-muted mb-8">{c.context}</div>
+                    <input className="input" style={{ fontSize: 13 }} placeholder="Your answer..." value={clarificationAnswers[c.question] || ""} onChange={function(e) { setClarificationAnswers(function(prev) { const next = Object.assign({}, prev); next[c.question] = e.target.value; return next; }); }} />
                   </div>
                 );
               })}
@@ -1849,6 +1893,15 @@ function SmartPaste({ existingPerson, onSave, onBack }) {
               </div>
             </div>
           )}
+
+          <div className="section-label">SOMETHING WRONG?</div>
+          <div className="card" style={{ background: "var(--card2)", borderColor: "var(--border2)" }}>
+            <div className="text-sm text-muted mb-8">Type any correction or extra info — e.g. "the cats are Bruce and Lady not dogs" or "booking is confirmed not tentative"</div>
+            <textarea className="input" rows={3} value={correctionText} onChange={function(e) { setCorrectionText(e.target.value); }} placeholder="Tell me what to change..." />
+            <button className="btn btn-primary mt-8" disabled={!correctionText.trim() || correcting} style={{ opacity: correctionText.trim() ? 1 : 0.4 }} onClick={applyCorrection}>
+              {correcting ? <Spinner /> : "Re-extract with correction →"}
+            </button>
+          </div>
 
           <button className="btn btn-green mt-16" onClick={function() { const pid = saveAll(); if (onSave && pid) onSave(pid); }}>
             {existingPerson ? "Update Client Record ✓" : "Save Client Record ✓"}
