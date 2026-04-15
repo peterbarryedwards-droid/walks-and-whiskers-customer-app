@@ -1445,260 +1445,375 @@ function CatWizard({ personId, existingCat, onSave, onBack }) {
 }
 
 /* ADD CLIENT FLOW — paste notes, AI extracts profile */
-function AddClient({ onSave, onBack }) {
-  const [step, setStep] = useState("paste"); // paste | loading | summary | questions | review
-  const [notes, setNotes] = useState("");
-  const [extracted, setExtracted] = useState(null);
-  const [questions, setQuestions] = useState([]);
-  const [qStep, setQStep] = useState(0);
-  const [qAnswers, setQAnswers] = useState({});
-  const [qInput, setQInput] = useState("");
+/* SMART PASTE */
+function SmartPaste({ existingPerson, onSave, onBack }) {
+  const [step, setStep] = useState("paste");
+  const [pasteText, setPasteText] = useState("");
+  const [result, setResult] = useState(null);
   const [toast, setToast] = useState(null);
-  const inputRef = useRef(null);
+  const [replyText, setReplyText] = useState("");
+  const [tweakInput, setTweakInput] = useState("");
+  const [tweaking, setTweaking] = useState(false);
 
   const showToast = function(msg) { setToast(msg); setTimeout(function() { setToast(null); }, 3000); };
 
-  const analyse = async function() {
-    if (!notes.trim()) return;
-    setStep("loading");
-    const prompt = "You are helping Freddie, a pet care professional in Winchester, create a client record from notes or a message.\n\n" +
-      "Notes:\n\"\"\"" + notes + "\"\"\"\n\n" +
-      "Extract all visible information. Detect service type carefully: dog_walk, cat_visit, dog_drop_in, home_sit, stay_over.\n" +
-      "Identify what critical information is genuinely missing.\n" +
-      "Return ONLY valid JSON:\n" +
-      "{" +
-      "\"extracted\":{\"owner_name\":null,\"phone\":null,\"address\":null,\"postcode\":null,\"platform\":null,\"service_type\":null,\"rate\":null,\"access_notes\":null,\"job_notes\":null,\"schedule\":null,\"house_notes\":null," +
-      "\"pets\":[{\"type\":\"dog or cat\",\"name\":null,\"breed\":null,\"age\":null,\"size\":null,\"personality\":null,\"goodWithDogs\":null,\"goodOnLead\":null,\"motivation\":null,\"recall\":null,\"feeding\":null,\"walkingSpots\":null,\"healthIssues\":null,\"vet\":null,\"vetPhone\":null,\"spooks\":null,\"medication\":null}]}," +
-      "\"questions\":[{\"field\":\"field_name\",\"question\":\"question to ask Freddie\",\"hint\":\"short hint\",\"required\":true}]" +
-      "}\n" +
-      "Only ask about genuinely critical missing fields: owner name (if missing), pet name (if missing), address (if missing).\n" +
-      "Do not ask about optional fields like personality or walking spots if not mentioned.\n" +
-      "questions can be empty [].";
-    try {
-      const result = await callClaudeJSON(prompt);
-      setExtracted(result.extracted || {});
-      setQuestions(result.questions || []);
-      setQStep(0); setQAnswers({});
-      setStep("summary");
-    } catch { showToast("Couldn't extract — try again"); setStep("paste"); }
+  const buildPrompt = function(text) {
+    const existingDogs = existingPerson ? db.getAll("dogs").filter(function(d) { return d.personId === existingPerson.id; }) : [];
+    const existingCats = existingPerson ? db.getAll("cats").filter(function(c) { return c.personId === existingPerson.id; }) : [];
+    const petList = existingDogs.map(function(d) { return d.name + " (dog)"; }).concat(existingCats.map(function(c) { return c.name + " (cat)"; })).join(", ");
+    const existingContext = existingPerson ? (
+      "\n\nEXISTING CLIENT (merge, do not overwrite unless new info explicitly updates):\n" +
+      "Name: " + (existingPerson.name || "") + "\n" +
+      "Address: " + (existingPerson.address || "") + "\n" +
+      "Phone: " + (existingPerson.phone || "") + "\n" +
+      "Service: " + (existingPerson.serviceType || "") + "\n" +
+      "Pets already on record: " + (petList || "none")
+    ) : "";
+
+    return "You are the AI brain for a pet care CRM for Freddie, a dog walker and pet carer in Winchester, aged 18.\n\n" +
+      "FREDDIES BUSINESS:\n" +
+      "- Dog walk 30min £15, 60min £20. Dog drop-in visit £15. Cat visit £12. Home sitting from £40 per night. Stay overs from £40 per night.\n" +
+      "- Always does a meet and greet before first booking with a new client\n" +
+      "- Pub shifts at King Alfred: Friday evenings, Saturday evenings, Sunday afternoons. Dogs cannot be left alone more than 4 hours during these shifts.\n" +
+      "- Home sitting can be day visits OR overnight stays — must determine from context\n\n" +
+      "CONTENT TO ANALYSE:\n\"\"\"" + text + "\"\"\"" + existingContext + "\n\n" +
+      "This might be: a Rover or Bark booking confirmation, a WhatsApp or message thread, a web enquiry, a Gemini meet and greet summary, or any mix.\n\n" +
+      "ROVER FORMAT:\n" +
+      "- Times like 'Start: Fri 17 Apr at 8:00 - 8:00 / End: Fri 17 Apr at 18:30 - 19:30' are availability windows. Use first start time, last end time.\n" +
+      "- Same start and end date = DAY VISIT not overnight, regardless of booking label\n" +
+      "- Booking type label on Rover may be wrong — check actual dates to determine service\n" +
+      "- Pet names in 'With X, Y, Z' blocks — determine species from context and pricing (cat rates = cats)\n" +
+      "- Multiple Rover booking blocks may be same client and job split across different days\n\n" +
+      "DATE RULES — CRITICAL:\n" +
+      "- ALWAYS expand date ranges into individual dates — one booking entry per day\n" +
+      "- 11th May to 25th May = 15 separate booking objects, each with their own date field\n" +
+      "- 20 Apr to 22 Apr = 3 booking objects: 2026-04-20, 2026-04-21, 2026-04-22\n" +
+      "- Current year is 2026 unless stated otherwise\n\n" +
+      "BOOKING STATUS:\n" +
+      "- confirmed: Rover booking block, explicit agreement in messages, payment made, or Freddie confirmed in thread\n" +
+      "- tentative: client said will confirm later, let me know, block the diary, waiting to hear\n" +
+      "- Booking confirmed conversationally (e.g. 'I have 11th-25th May booked, 15 days x £40') = confirmed\n\n" +
+      "THREAD READING:\n" +
+      "- WhatsApp threads often pasted newest-first — read the whole thing to understand full story\n" +
+      "- Resolution of confusion is in most recent messages\n" +
+      "- System messages like 'LAURA E. booked house sitting' are Rover confirmations\n\n" +
+      "Return ONLY valid JSON with this exact structure:\n" +
+      "{\n" +
+      "  \"client\": {\"name\": null, \"phone\": null, \"email\": null, \"address\": null, \"postcode\": null, \"platform\": \"Rover or Bark or Direct or Other\"},\n" +
+      "  \"pets\": [\n" +
+      "    {\"type\": \"dog or cat\", \"name\": null, \"breed\": null, \"age\": null, \"personality\": null, \"feeding\": null, \"walking_spots\": null, \"recall\": null, \"lead_behaviour\": null, \"health\": null, \"vet\": null, \"vet_phone\": null, \"house_notes\": null}\n" +
+      "  ],\n" +
+      "  \"bookings\": [\n" +
+      "    {\"type\": \"day_visit or overnight or dog_walk or cat_visit or dog_drop_in or meet_greet\", \"status\": \"confirmed or tentative\", \"date\": \"YYYY-MM-DD\", \"time_start\": \"HH:MM or null\", \"time_end\": \"HH:MM or null\", \"amount_paid\": 0, \"notes\": null}\n" +
+      "  ],\n" +
+      "  \"house_notes\": null,\n" +
+      "  \"schedule_notes\": null,\n" +
+      "  \"access_notes\": null,\n" +
+      "  \"reply_needed\": true,\n" +
+      "  \"suggested_reply\": null,\n" +
+      "  \"actions\": [\n" +
+      "    {\"type\": \"chase_up or follow_up or arrange_meet or send_payment_details or clarify\", \"description\": \"plain English for Freddie\", \"urgency\": \"high or medium or low\", \"due\": \"YYYY-MM-DD or null\"}\n" +
+      "  ],\n" +
+      "  \"clarifications\": [\n" +
+      "    {\"question\": \"something genuinely ambiguous\", \"context\": \"why this matters\"}\n" +
+      "  ],\n" +
+      "  \"stage\": \"new_enquiry or replied or interested or meet_arranged or met or active or tentative or confirmed\",\n" +
+      "  \"summary\": \"2-3 sentence plain English summary of the whole situation for Freddie\"\n" +
+      "}\n\n" +
+      "CRITICAL RULES:\n" +
+      "- bookings array must have ONE entry per day — expand ALL date ranges\n" +
+      "- For a 15 night stay 11th to 25th May: create 15 separate booking objects each with different YYYY-MM-DD date\n" +
+      "- Detect ALL pets not just the first one\n" +
+      "- For Gemini meet summaries, extract all pet details, feeding, walking spots, house logistics thoroughly\n" +
+      "- reply_needed should be false if a reply was already sent and visible in the thread\n" +
+      "- Only include clarifications if genuinely ambiguous — max 2\n" +
+      "- suggested_reply must be in Freddies voice: warm, natural, British English, signs off as Freddie, no Best regards";
   };
 
-  const nextQ = function() {
-    if (!qInput.trim()) return;
-    const q = questions[qStep];
-    const next = Object.assign({}, qAnswers, { [q.field]: qInput.trim() });
-    setQAnswers(next); setQInput("");
-    if (qStep < questions.length - 1) {
-      setQStep(function(s) { return s + 1; });
-      setTimeout(function() { if (inputRef.current) inputRef.current.focus(); }, 80);
-    } else {
-      // Merge answers into extracted
-      const merged = Object.assign({}, extracted);
-      Object.entries(next).forEach(function(e) {
-        if (e[1]) merged[e[0]] = e[1];
-      });
-      setExtracted(merged);
+  const analyse = async function() {
+    if (!pasteText.trim()) return;
+    setStep("loading");
+    try {
+      const raw = await callClaude(buildPrompt(pasteText), 4000);
+      const clean = raw.replace(new RegExp("```json|```", "g"), "").trim();
+      const parsed = JSON.parse(clean);
+      setResult(parsed);
+      setReplyText(parsed.suggested_reply || "");
       setStep("review");
+    } catch(e) {
+      console.error("SmartPaste failed:", e);
+      showToast("Could not read that — try again");
+      setStep("paste");
     }
   };
 
-  const save = function() {
-    if (!extracted) return;
-    const personId = uid();
-    const person = {
+  const saveAll = function() {
+    if (!result) return null;
+    const personId = (existingPerson && existingPerson.id) || uid();
+    const existing = existingPerson || {};
+    const client = result.client || {};
+    const svcFromBooking = result.bookings && result.bookings.length > 0 ? (
+      result.bookings[0].type === "overnight" || result.bookings[0].type === "day_visit" ? "home_sit" :
+      result.bookings[0].type === "cat_visit" ? "cat_visit" :
+      result.bookings[0].type === "dog_walk" ? "dog_walk" :
+      result.bookings[0].type === "dog_drop_in" ? "drop_in" : ""
+    ) : "";
+
+    const person = Object.assign({}, existing, {
       id: personId,
-      name: extracted.owner_name || "Unknown",
-      phone: extracted.phone || "",
-      address: extracted.address || "",
-      postcode: extracted.postcode || "",
-      platform: extracted.platform || "Direct",
-      serviceType: extracted.service_type || "",
-      rate: extracted.rate || "",
-      accessNotes: extracted.access_notes || "",
-      stage: "active",
-      createdAt: nowStr(),
+      name: client.name || existing.name || "Unknown",
+      phone: client.phone || existing.phone || "",
+      email: client.email || existing.email || "",
+      address: client.address || existing.address || "",
+      postcode: client.postcode || existing.postcode || "",
+      platform: client.platform || existing.platform || "Direct",
+      serviceType: existing.serviceType || svcFromBooking || "",
+      stage: result.stage || existing.stage || "new_enquiry",
+      houseNotes: result.house_notes || existing.houseNotes || "",
+      scheduleNotes: result.schedule_notes || existing.scheduleNotes || "",
+      accessNotes: result.access_notes || existing.accessNotes || "",
+      createdAt: existing.createdAt || nowStr(),
       lastActionDate: nowStr(),
-      messages: [],
-      profileNotes: [{ id: uid(), date: nowStr(), text: notes, source: "add_client" }],
-      jobNotes: extracted.job_notes || "",
-      schedule: extracted.schedule || "",
-      houseNotes: extracted.house_notes || "",
-    };
+      messages: existing.messages || [],
+      profileNotes: (existing.profileNotes || []).concat([{ id: uid(), date: nowStr(), text: pasteText, source: "smart_paste" }]),
+    });
     db.upsert("people", person);
-    const pets = extracted.pets || [];
-    pets.forEach(function(pet) {
+
+    (result.pets || []).forEach(function(pet) {
       if (!pet.name) return;
       if (pet.type === "cat") {
-        db.upsert("cats", { id: uid(), personId, name: pet.name || "", age: pet.age || "", indoorOutdoor: "", feedingRoutine: pet.feeding || "", litterNotes: "", medication: pet.medication ? "Yes" : "No", medicationNotes: pet.medication || "", personality: pet.personality || "" });
+        const ec = db.getAll("cats").find(function(c) { return c.personId === personId && c.name && c.name.toLowerCase() === pet.name.toLowerCase(); });
+        db.upsert("cats", Object.assign({}, ec || {}, {
+          id: (ec && ec.id) || uid(), personId,
+          name: pet.name, age: pet.age || "", feedingRoutine: pet.feeding || "",
+          personality: pet.personality || "", indoorOutdoor: "", litterNotes: "",
+          medication: "No", medicationNotes: "",
+        }));
       } else {
-        const notes = [pet.personality, pet.motivation ? "Motivation: " + pet.motivation : null, pet.recall ? "Recall: " + pet.recall : null, pet.walkingSpots ? "Walking: " + pet.walkingSpots : null, pet.feeding ? "Feeding: " + pet.feeding : null].filter(Boolean).join(". ");
-        db.upsert("dogs", { id: uid(), personId, name: pet.name || "", breed: pet.breed || "", age: pet.age || "", size: pet.size || "", goodWithDogs: pet.goodWithDogs || "", goodOnLead: pet.goodOnLead || "", healthIssues: pet.healthIssues ? "Yes" : "No", healthNotes: pet.healthIssues || "", spooks: pet.spooks || "", vet: pet.vet || "", vetPhone: pet.vetPhone || "", personality: notes, meetGreetResult: "" });
+        const ed = db.getAll("dogs").find(function(d) { return d.personId === personId && d.name && d.name.toLowerCase() === pet.name.toLowerCase(); });
+        const notes = [pet.personality, pet.recall ? "Recall: " + pet.recall : null, pet.lead_behaviour ? "Lead: " + pet.lead_behaviour : null, pet.walking_spots ? "Walking: " + pet.walking_spots : null, pet.feeding ? "Feeding: " + pet.feeding : null, pet.house_notes].filter(Boolean).join(". ");
+        db.upsert("dogs", Object.assign({}, ed || {}, {
+          id: (ed && ed.id) || uid(), personId,
+          name: pet.name, breed: pet.breed || "", age: pet.age || "",
+          goodWithDogs: "", goodOnLead: "",
+          healthIssues: pet.health ? "Yes" : "No", healthNotes: pet.health || "",
+          spooks: "", vet: pet.vet || "", vetPhone: pet.vet_phone || "",
+          personality: notes, meetGreetResult: "", size: "",
+        }));
       }
     });
-    onSave(personId);
+
+    (result.bookings || []).forEach(function(booking) {
+      if (!booking.date) return;
+      const svcType = booking.type === "overnight" || booking.type === "day_visit" ? "home_sit" :
+        booking.type === "cat_visit" ? "cat_visit" :
+        booking.type === "dog_walk" ? "dog_walk" :
+        booking.type === "dog_drop_in" ? "drop_in" : "home_sit";
+      db.upsert("visits", {
+        id: uid(), personId, serviceType: svcType,
+        date: booking.date, time: booking.time_start || "",
+        duration: (booking.time_start && booking.time_end) ? booking.time_start + "-" + booking.time_end : "",
+        status: booking.status === "confirmed" ? "confirmed" : "tentative",
+        isMeetGreet: booking.type === "meet_greet",
+        paid: (booking.amount_paid || 0) > 0,
+        amount: booking.amount_paid ? String(booking.amount_paid) : "",
+        notes: booking.notes || "",
+      });
+    });
+
+    showToast("Saved!");
+    return personId;
   };
 
-  const InfoRow = function(props) {
-    if (!props.value) return null;
-    return (
-      <div className="row mt-4">
-        <span style={{ fontSize: 14, minWidth: 22 }}>{props.icon}</span>
-        <div><div className="text-xs text-muted">{props.label}</div><div className="text-sm">{props.value}</div></div>
+  const tweakReply = async function() {
+    if (!tweakInput.trim()) return;
+    setTweaking(true);
+    try {
+      const raw = await callClaude("Freddies draft reply:\n\n\"" + replyText + "\"\n\nHe wants to change this: \"" + tweakInput + "\"\n\nRewrite with this change. Return ONLY the updated draft. Warm, natural, British English, signs off as Freddie.", 600);
+      setReplyText(raw.trim());
+      setTweakInput("");
+    } catch { showToast("Could not update — try again"); }
+    setTweaking(false);
+  };
+
+  if (step === "paste") return (
+    <div className="fade-up">
+      <BackBtn onBack={onBack} />
+      <div style={{ padding: "0 16px 24px" }}>
+        <div className="page-title mb-4">{existingPerson ? "Smart Paste" : "Add Client"}</div>
+        <div className="page-sub mb-16">
+          {existingPerson
+            ? "Paste anything — a message, Rover booking, or meet and greet summary. The AI will read it and update the record."
+            : "Paste anything — a message thread, Rover booking, web enquiry, or meet and greet summary. The AI will build the full client record."}
+        </div>
+        <textarea className="input" rows={12} value={pasteText} onChange={function(e) { setPasteText(e.target.value); }}
+          placeholder={"Paste here...\n\nWorks with:\n• Rover booking confirmations\n• WhatsApp message threads\n• Web enquiry submissions\n• Gemini meet and greet summaries\n• Any mix of the above"} autoFocus />
+        <button className="btn btn-primary mt-12" disabled={!pasteText.trim()} style={{ opacity: pasteText.trim() ? 1 : 0.4 }} onClick={analyse}>
+          Read and Extract →
+        </button>
       </div>
-    );
-  };
+      {toast && <div className="toast">{toast}</div>}
+    </div>
+  );
 
-  if (step === "paste") {
+  if (step === "loading") return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "60vh", gap: 16 }}>
+      <Spinner large />
+      <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, letterSpacing: 2, color: "var(--muted)" }}>READING YOUR CONTENT...</div>
+      <div className="text-sm text-muted">Extracting client, pets, bookings and actions</div>
+    </div>
+  );
+
+  if (step === "review" && result) {
+    const client = result.client || {};
+    const pets = result.pets || [];
+    const bookings = result.bookings || [];
+    const actions = result.actions || [];
+    const clarifications = result.clarifications || [];
+    const confirmed = bookings.filter(function(b) { return b.status === "confirmed"; });
+    const tentative = bookings.filter(function(b) { return b.status === "tentative"; });
+    const grouped = {};
+    bookings.forEach(function(b) { const k = b.date ? b.date.slice(0, 7) : "unknown"; if (!grouped[k]) grouped[k] = []; grouped[k].push(b); });
+
     return (
       <div className="fade-up">
-        <BackBtn onBack={onBack} />
+        <BackBtn onBack={function() { setStep("paste"); }} />
         <div style={{ padding: "0 16px 24px" }}>
-          <div className="page-title mb-4">Add Client</div>
-          <div className="page-sub mb-16">Paste anything — a Gemini summary, meet and greet notes, a WhatsApp conversation. The AI will extract the key details.</div>
-          <textarea className="input" rows={12} value={notes} onChange={function(e) { setNotes(e.target.value); }} placeholder={"Paste your notes here...\n\nE.g. Dog profile: Tanga, Fox Red Lab, very gentle...\nOwner: Kate, 07xxx, 12 Church Street...\nVet: Stable Close Vets, 01962 841001..."} autoFocus />
-          <button className="btn btn-primary mt-12" disabled={!notes.trim()} style={{ opacity: notes.trim() ? 1 : 0.4 }} onClick={analyse}>
-            Extract Details →
+          <div className="page-title mb-4">{"Here's what I found"}</div>
+          <div className="page-sub mb-16">{result.summary}</div>
+
+          <div className="section-label">CLIENT</div>
+          <div className="card">
+            {[["👤","Name",client.name],["📞","Phone",client.phone],["📧","Email",client.email],["🏠","Address",client.address],["📱","Platform",client.platform]].map(function(row, i) {
+              if (!row[2]) return null;
+              return <div key={i} className="row mt-4"><span style={{ fontSize: 14, minWidth: 22 }}>{row[0]}</span><div><div className="text-xs text-muted">{row[1]}</div><div className="text-sm">{row[2]}</div></div></div>;
+            })}
+            {!client.name && <div className="text-sm text-muted" style={{ fontStyle: "italic" }}>No name found — you can add it after saving</div>}
+          </div>
+
+          {pets.length > 0 && (
+            <div>
+              <div className="section-label">{"PETS (" + pets.length + ")"}</div>
+              {pets.map(function(pet, i) {
+                const fields = [["🐾","Breed",pet.breed],["🎂","Age",pet.age],["💪","Personality",pet.personality],["🍽️","Feeding",pet.feeding],["📍","Walking spots",pet.walking_spots],["📣","Recall",pet.recall],["🦮","Lead",pet.lead_behaviour],["💊","Health",pet.health],["🏥","Vet",pet.vet],["📞","Vet phone",pet.vet_phone],["🏡","House notes",pet.house_notes]].filter(function(f) { return f[2]; });
+                return (
+                  <div key={i} className="card">
+                    <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 8 }}>{pet.type === "cat" ? "🐱" : "🐕"} {pet.name || "Unknown pet"}</div>
+                    {fields.map(function(f, j) { return <div key={j} className="row mt-4"><span style={{ fontSize: 14, minWidth: 22 }}>{f[0]}</span><div><div className="text-xs text-muted">{f[1]}</div><div className="text-sm">{f[2]}</div></div></div>; })}
+                    {fields.length === 0 && <div className="text-sm text-muted" style={{ fontStyle: "italic" }}>Minimal detail — add more from Profile tab</div>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {bookings.length > 0 && (
+            <div>
+              <div className="section-label">
+                {confirmed.length > 0
+                  ? "BOOKINGS (" + confirmed.length + " confirmed" + (tentative.length > 0 ? ", " + tentative.length + " tentative" : "") + ")"
+                  : "BOOKINGS (" + tentative.length + " tentative)"}
+              </div>
+              {Object.entries(grouped).map(function(entry) {
+                const mk = entry[0]; const mb = entry[1];
+                const d = new Date(mk + "-01T12:00:00");
+                const label = isNaN(d.getTime()) ? mk : d.toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+                const totalPaid = mb.reduce(function(s, b) { return s + (b.amount_paid || 0); }, 0);
+                return (
+                  <div key={mk} className="card">
+                    <div className="row-between mb-8">
+                      <div style={{ fontWeight: 700, fontSize: 14 }}>{label}</div>
+                      <div className="row" style={{ gap: 8 }}>
+                        {totalPaid > 0 && <span className="badge badge-green">{"£" + totalPaid + " paid"}</span>}
+                        <span className={"badge " + (mb[0].status === "confirmed" ? "badge-green" : "badge-yellow")}>{mb[0].status}</span>
+                      </div>
+                    </div>
+                    <div className="text-sm text-muted">{mb.length + " day" + (mb.length !== 1 ? "s" : "")}</div>
+                    <div className="text-xs text-muted mt-4">{mb.slice(0, 3).map(function(b) { return fmtDate(b.date); }).join(", ") + (mb.length > 3 ? "..." : "")}</div>
+                    {mb[0].time_start && <div className="text-xs text-muted mt-2">{mb[0].time_start + (mb[0].time_end ? " – " + mb[0].time_end : "")}</div>}
+                    {mb[0].type && <div className="text-xs text-muted mt-2" style={{ textTransform: "capitalize" }}>{mb[0].type.replace(new RegExp("_", "g"), " ")}</div>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {(result.house_notes || result.schedule_notes || result.access_notes) && (
+            <div>
+              <div className="section-label">JOB NOTES</div>
+              <div className="card">
+                {result.house_notes && <div className="row mt-4"><span style={{ fontSize: 14, minWidth: 22 }}>🏡</span><div><div className="text-xs text-muted">House notes</div><div className="text-sm">{result.house_notes}</div></div></div>}
+                {result.schedule_notes && <div className="row mt-4"><span style={{ fontSize: 14, minWidth: 22 }}>🗓️</span><div><div className="text-xs text-muted">Schedule</div><div className="text-sm">{result.schedule_notes}</div></div></div>}
+                {result.access_notes && <div className="row mt-4"><span style={{ fontSize: 14, minWidth: 22 }}>🔑</span><div><div className="text-xs text-muted">Access</div><div className="text-sm">{result.access_notes}</div></div></div>}
+              </div>
+            </div>
+          )}
+
+          {actions.length > 0 && (
+            <div>
+              <div className="section-label">ACTIONS FOR FREDDIE</div>
+              <div className="card">
+                {actions.map(function(action, i) {
+                  return (
+                    <div key={i} className="row mt-8" style={{ alignItems: "flex-start" }}>
+                      <span className="dot" style={{ background: action.urgency === "high" ? "var(--orange)" : action.urgency === "medium" ? "var(--yellow)" : "var(--muted2)", marginTop: 5, flexShrink: 0 }} />
+                      <div style={{ marginLeft: 8 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600 }}>{action.description}</div>
+                        {action.due && <div className="text-xs text-muted mt-2">{"By: " + (action.due.includes("-") ? fmtDate(action.due) : action.due)}</div>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {clarifications.length > 0 && (
+            <div>
+              <div className="section-label">ONE THING TO CHECK</div>
+              {clarifications.map(function(c, i) {
+                return (
+                  <div key={i} className="card" style={{ background: "rgba(253,203,110,0.08)", borderColor: "rgba(253,203,110,0.3)" }}>
+                    <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>{"❓ " + c.question}</div>
+                    <div className="text-sm text-muted">{c.context}</div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {result.reply_needed && (
+            <div>
+              <div className="section-label">SUGGESTED REPLY</div>
+              <div className="text-xs text-muted mb-8">Tap to edit before copying</div>
+              <textarea className="draft-box" value={replyText} onChange={function(e) { setReplyText(e.target.value); }} rows={8} />
+              <CopyBtn text={replyText} />
+              <div style={{ marginTop: 10, background: "var(--card2)", border: "1px solid var(--border2)", borderRadius: "var(--radius-sm)", padding: "11px" }}>
+                <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 700, marginBottom: 8 }}>✏️ WANT TO CHANGE SOMETHING?</div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <input className="input" style={{ fontSize: 13, padding: "8px 11px" }} placeholder='e.g. "make it shorter"' value={tweakInput} onChange={function(e) { setTweakInput(e.target.value); }} onKeyDown={function(e) { if (e.key === "Enter") tweakReply(); }} />
+                  <button className="btn btn-primary btn-sm" disabled={!tweakInput.trim() || tweaking} style={{ flexShrink: 0 }} onClick={tweakReply}>
+                    {tweaking ? <Spinner /> : "Go"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <button className="btn btn-green mt-16" onClick={function() { const pid = saveAll(); if (onSave && pid) onSave(pid); }}>
+            {existingPerson ? "Update Client Record ✓" : "Save Client Record ✓"}
           </button>
+          <button className="btn btn-ghost mt-8" onClick={function() { setStep("paste"); setPasteText(""); setResult(null); }}>Start Over</button>
         </div>
         {toast && <div className="toast">{toast}</div>}
       </div>
     );
   }
 
-  if (step === "loading") {
-    return (
-      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "60vh", gap: 16 }}>
-        <Spinner large />
-        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, letterSpacing: 2, color: "var(--muted)" }}>READING YOUR NOTES...</div>
-        <div className="text-sm text-muted">Pulling out all the key details</div>
-      </div>
-    );
-  }
-
-  if (step === "summary" && extracted) {
-    const foundCount = [extracted.owner_name, extracted.phone, extracted.address, (extracted.pets && extracted.pets.length > 0 && extracted.pets[0].name) ? "pet" : null].filter(Boolean).length;
-    return (
-      <div className="fade-up">
-        <BackBtn onBack={function() { setStep("paste"); }} />
-        <div style={{ padding: "0 16px 24px" }}>
-          <div style={{ fontSize: 11, color: "var(--purple)", fontWeight: 700, letterSpacing: 0.5, marginBottom: 8 }}>WHAT I FOUND</div>
-          <div className="page-title mb-4">{"Here's what I got"}</div>
-          <div className="page-sub mb-16">Review, then I'll ask for anything critical that's missing.</div>
-          <div className="card" style={{ marginLeft: 0, marginRight: 0, marginBottom: 14 }}>
-            {[["👤","Owner name",extracted.owner_name],["📞","Phone",extracted.phone],["🏠","Address",extracted.address],["📱","Platform",extracted.platform],["🦮","Service",extracted.service_type]].map(function(f, i) {
-              if (!f[2]) return null;
-              return <div key={i} className="found-row"><span style={{ fontSize: 17, width: 26 }}>{f[0]}</span><div className="flex-1"><div style={{ fontSize: 11, color: "var(--muted2)", fontWeight: 700, textTransform: "uppercase" }}>{f[1]}</div><div style={{ fontSize: 14, color: "#c8d0f0", marginTop: 2 }}>{f[2]}</div></div><span className="text-green">✓</span></div>;
-            })}
-            {(extracted.pets || []).filter(function(p) { return p.name; }).map(function(pet, i) {
-              return <div key={"pet" + i} className="found-row"><span style={{ fontSize: 17, width: 26 }}>{pet.type === "cat" ? "🐱" : "🐕"}</span><div className="flex-1"><div style={{ fontSize: 11, color: "var(--muted2)", fontWeight: 700, textTransform: "uppercase" }}>Pet</div><div style={{ fontSize: 14, color: "#c8d0f0", marginTop: 2 }}>{pet.name + (pet.breed ? " · " + pet.breed : "")}</div></div><span className="text-green">✓</span></div>;
-            })}
-            {foundCount === 0 && <div className="text-sm text-muted">Not much found — questions will fill in the gaps.</div>}
-            {questions.length > 0 && (
-              <div style={{ marginTop: 14 }}>
-                <div style={{ fontSize: 11, color: "var(--muted2)", fontWeight: 700, textTransform: "uppercase", marginBottom: 8 }}>{"Still need (" + questions.length + ")"}</div>
-                <div style={{ display: "flex", flexWrap: "wrap" }}>{questions.map(function(q) { return <span key={q.field} className="missing-chip">❓ {q.field.replace(/_/g, " ")}</span>; })}</div>
-              </div>
-            )}
-          </div>
-          <button className="btn btn-primary" onClick={function() { if (questions.length > 0) setStep("questions"); else setStep("review"); }}>
-            {questions.length > 0 ? ("Answer " + questions.length + " question" + (questions.length !== 1 ? "s" : "") + " →") : "Review and Save →"}
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (step === "questions" && questions.length > 0) {
-    const currentQ = questions[qStep];
-    const pctW = qStep > 0 ? (Math.round(qStep * 100 / questions.length) + "%") : "0%";
-    return (
-      <div className="fade-up">
-        <BackBtn onBack={function() { if (qStep === 0) setStep("summary"); else setQStep(function(s) { return s - 1; }); }} />
-        <div style={{ padding: "0 16px 24px" }}>
-          <div style={{ fontSize: 11, color: "var(--purple)", fontWeight: 700, letterSpacing: 0.5, marginBottom: 12 }}>{"QUESTION " + (qStep + 1) + " OF " + questions.length}</div>
-          <div className="progress-track"><div className="progress-fill" style={{ width: pctW }} /></div>
-          <div style={{ fontSize: 20, fontWeight: 700, lineHeight: 1.3, marginBottom: 6 }}>{currentQ.question}</div>
-          {currentQ.hint && <div className="text-sm text-muted mb-16">{currentQ.hint}</div>}
-          <input ref={inputRef} className="input" type="text" value={qInput} onChange={function(e) { setQInput(e.target.value); }} placeholder="Your answer..." onKeyDown={function(e) { if (e.key === "Enter") nextQ(); }} autoFocus />
-          <div className="btn-row mt-12" style={{ padding: 0 }}>
-            {!currentQ.required && <button className="btn btn-ghost" onClick={function() { setQInput(""); nextQ(); }}>Skip</button>}
-            <button className="btn btn-primary" disabled={!qInput.trim()} style={{ opacity: qInput.trim() ? 1 : 0.4 }} onClick={nextQ}>
-              {qStep === questions.length - 1 ? "Review →" : "Next →"}
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (step === "review" && extracted) {
-    const pets = extracted.pets || [];
-    return (
-      <div className="fade-up">
-        <BackBtn onBack={function() { setStep(questions.length > 0 ? "questions" : "summary"); }} />
-        <div style={{ padding: "0 16px 24px" }}>
-          <div className="page-title mb-4">Review and Save</div>
-          <div className="page-sub mb-16">Check what I found, then save the record.</div>
-
-          <div className="section-label">Owner</div>
-          <div className="card">
-            <InfoRow icon="👤" label="Name" value={extracted.owner_name} />
-            <InfoRow icon="📞" label="Phone" value={extracted.phone} />
-            <InfoRow icon="🏠" label="Address" value={extracted.address} />
-            <InfoRow icon="📮" label="Postcode" value={extracted.postcode} />
-            <InfoRow icon="📱" label="Platform" value={extracted.platform} />
-            <InfoRow icon="💷" label="Rate" value={extracted.rate} />
-            <InfoRow icon="🔑" label="Access notes" value={extracted.access_notes} />
-            {!extracted.owner_name && <div className="text-sm text-muted" style={{ fontStyle: "italic" }}>No owner name found — you can add it after saving</div>}
-          </div>
-
-          {pets.map(function(pet, i) {
-            const icon = pet.type === "cat" ? "🐱" : "🐕";
-            return (
-              <div key={i}>
-                <div className="section-label">{icon + " " + (pet.name || "Pet " + (i + 1))}</div>
-                <div className="card">
-                  <InfoRow icon="🐾" label="Breed" value={pet.breed} />
-                  <InfoRow icon="🎂" label="Age" value={pet.age} />
-                  <InfoRow icon="💪" label="Personality" value={pet.personality} />
-                  <InfoRow icon="🎯" label="Motivation" value={pet.motivation} />
-                  <InfoRow icon="📣" label="Recall" value={pet.recall} />
-                  <InfoRow icon="🦮" label="On lead" value={pet.goodOnLead} />
-                  <InfoRow icon="🐶" label="With other dogs" value={pet.goodWithDogs} />
-                  <InfoRow icon="🍽️" label="Feeding" value={pet.feeding} />
-                  <InfoRow icon="📍" label="Walking spots" value={pet.walkingSpots} />
-                  <InfoRow icon="💊" label="Medication" value={pet.medication} />
-                  <InfoRow icon="⚕️" label="Health" value={pet.healthIssues} />
-                  <InfoRow icon="😨" label="Spooks" value={pet.spooks} />
-                  <InfoRow icon="🏥" label="Vet" value={pet.vet} />
-                  <InfoRow icon="📞" label="Vet phone" value={pet.vetPhone} />
-                  {!pet.name && <div className="text-sm text-muted" style={{ fontStyle: "italic" }}>No pet name found</div>}
-                </div>
-              </div>
-            );
-          })}
-          {pets.length === 0 && <div style={{ padding: "4px 0" }}><div className="text-sm text-muted">No pets found — you can add them after saving</div></div>}
-
-          {(extracted.job_notes || extracted.schedule || extracted.house_notes) && (
-            <div>
-              <div className="section-label">Notes</div>
-              <div className="card">
-                <InfoRow icon="📋" label="Job notes" value={extracted.job_notes} />
-                <InfoRow icon="🗓️" label="Schedule" value={extracted.schedule} />
-                <InfoRow icon="🏡" label="House notes" value={extracted.house_notes} />
-              </div>
-            </div>
-          )}
-
-          <button className="btn btn-green mt-16" onClick={save}>Save Client Record ✓</button>
-          <button className="btn btn-ghost mt-8" onClick={function() { setStep("paste"); }}>Edit Notes</button>
-        </div>
-      </div>
-    );
-  }
-
   return null;
 }
+
+
 function NotesTab({ person, onUpdate }) {
   const [pasteMode, setPasteMode] = useState(false);
   const [pasteText, setPasteText] = useState("");
@@ -2078,7 +2193,7 @@ function PersonDetail({ personId, onBack, onUpdate }) {
 
       {/* Four tabs */}
       <div className="pill-tabs mt-4 mb-4">
-        {[["profile","Profile"],["bookings","Bookings"],["notes","Notes"],["messages","Messages"]].map(function(t) {
+        {[["profile","Profile"],["bookings","Bookings"],["notes","Notes"],["paste","Smart Paste"],["messages","Messages"]].map(function(t) {
           return <button key={t[0]} className={"pill-tab" + (activeTab === t[0] ? " active" : "")} onClick={function() { setActiveTab(t[0]); if (t[0] !== "bookings") setShowBookingForm(false); }}>{t[1]}</button>;
         })}
       </div>
@@ -2296,6 +2411,15 @@ function PersonDetail({ personId, onBack, onUpdate }) {
 
       {/* ── NOTES TAB */}
       {activeTab === "notes" && <NotesTab person={person} onUpdate={refresh} />}
+
+      {/* ── SMART PASTE TAB */}
+      {activeTab === "paste" && (
+        <SmartPaste
+          existingPerson={person}
+          onSave={function() { setActiveTab("profile"); refresh(); }}
+          onBack={function() { setActiveTab("profile"); }}
+        />
+      )}
 
       {/* ── MESSAGES TAB — with edit/delete */}
       {activeTab === "messages" && (
@@ -2852,7 +2976,7 @@ export default function App() {
     <>
       <style>{CSS}</style>
       <div className="app-shell"><div className="tab-content">
-        <AddClient onSave={function(personId) { setShowAddClient(false); setOpenPersonId(personId); refresh(); }} onBack={function() { setShowAddClient(false); }} />
+        <SmartPaste existingPerson={null} onSave={function(personId) { setShowAddClient(false); setOpenPersonId(personId); refresh(); }} onBack={function() { setShowAddClient(false); }} />
       </div></div>
     </>
   );
