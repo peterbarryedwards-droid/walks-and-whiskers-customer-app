@@ -1474,7 +1474,7 @@ function SmartPaste({ existingPerson, onSave, onBack }) {
       "FREDDIES BUSINESS:\n" +
       "- Dog walk 30min £15, 60min £20. Dog drop-in visit £15. Cat visit £12. Home sitting from £40 per night. Stay overs from £40 per night.\n" +
       "- Always does a meet and greet before first booking with a new client\n" +
-      "- Pub shifts at King Alfred: Friday evenings, Saturday evenings, Sunday afternoons. Dogs cannot be left alone more than 4 hours during these shifts.\n" +
+      "- Freddie works pub shifts at King Alfred: Friday evenings, Saturday evenings, Sunday afternoons. During these shifts FREDDIE is away, not a carer — dogs in Freddie's care cannot be left alone for more than 4 hours. His PARENTS cover for him during pub shifts when he is looking after pets, not Freddie himself covering.\n" +
       "- Home sitting can be day visits OR overnight stays — must determine from context\n\n" +
       "CONTENT TO ANALYSE:\n\"\"\"" + text + "\"\"\"" + existingContext + "\n\n" +
       "This might be: a Rover or Bark booking confirmation, a WhatsApp or message thread, a web enquiry, a Gemini meet and greet summary, or any mix.\n\n" +
@@ -1483,20 +1483,24 @@ function SmartPaste({ existingPerson, onSave, onBack }) {
       "- Same start and end date = DAY VISIT not overnight, regardless of booking label\n" +
       "- Booking type label on Rover may be wrong — check actual dates to determine service\n" +
       "- Pet names in 'With X, Y, Z' blocks — determine species from context and pricing (cat rates = cats)\n" +
-      "- Multiple Rover booking blocks may be same client and job split across different days\n\n" +
+      "- Multiple Rover booking blocks may be same client and job split across different days\n" +
+      "- Rover payment amounts are what the CLIENT paid Rover, which includes Rover's fees. These are NOT necessarily what Freddie receives. Do NOT assume payment is confirmed unless the thread or messages explicitly confirm it.\n\n" +
       "DATE RULES — CRITICAL:\n" +
       "- ALWAYS expand date ranges into individual dates — one booking entry per day\n" +
       "- 11th May to 25th May = 15 separate booking objects, each with their own date field\n" +
       "- 20 Apr to 22 Apr = 3 booking objects: 2026-04-20, 2026-04-21, 2026-04-22\n" +
       "- Current year is 2026 unless stated otherwise\n\n" +
-      "BOOKING STATUS:\n" +
-      "- confirmed: Rover booking block, explicit agreement in messages, payment made, or Freddie confirmed in thread\n" +
-      "- tentative: client said will confirm later, let me know, block the diary, waiting to hear\n" +
-      "- Booking confirmed conversationally (e.g. 'I have 11th-25th May booked, 15 days x £40') = confirmed\n\n" +
+      "BOOKING STATUS — CRITICAL:\n" +
+      "- confirmed: Rover booking block received, explicit agreement in messages, OR payment confirmed\n" +
+      "- tentative: client said 'will confirm', 'let me know', 'block the diary', 'waiting to hear', 'I will get back to you'\n" +
+      "- Booking confirmed conversationally (e.g. 'I have 11th-25th May booked, 15 days x £40 = £600') = confirmed\n" +
+      "- If ANY uncertainty exists about whether the booking is going ahead, use tentative\n" +
+      "- amount_paid should only be non-zero if payment is explicitly confirmed. Rover booking blocks showing amounts do NOT mean payment is confirmed.\n\n" +
       "THREAD READING:\n" +
       "- WhatsApp threads often pasted newest-first — read the whole thing to understand full story\n" +
       "- Resolution of confusion is in most recent messages\n" +
-      "- System messages like 'LAURA E. booked house sitting' are Rover confirmations\n\n" +
+      "- System messages like 'LAURA E. booked house sitting' are Rover confirmations\n" +
+      "- Look for booking confirmations in plain conversational text — 'I have 11th May to 25th May booked, 15 days x £40 = £600' = confirmed booking\n\n" +
       "Return ONLY valid JSON with this exact structure:\n" +
       "{\n" +
       "  \"client\": {\"name\": null, \"phone\": null, \"email\": null, \"address\": null, \"postcode\": null, \"platform\": \"Rover or Bark or Direct or Other\"},\n" +
@@ -1512,7 +1516,7 @@ function SmartPaste({ existingPerson, onSave, onBack }) {
       "  \"reply_needed\": true,\n" +
       "  \"suggested_reply\": null,\n" +
       "  \"actions\": [\n" +
-      "    {\"type\": \"chase_up or follow_up or arrange_meet or send_payment_details or clarify\", \"description\": \"plain English for Freddie\", \"urgency\": \"high or medium or low\", \"due\": \"YYYY-MM-DD or null\"}\n" +
+      "    {\"type\": \"chase_up or follow_up or arrange_meet or send_payment_details or clarify or add_to_calendar\", \"description\": \"plain English for Freddie\", \"urgency\": \"high or medium or low\", \"due\": \"YYYY-MM-DD or null\"}\n" +
       "  ],\n" +
       "  \"clarifications\": [\n" +
       "    {\"question\": \"something genuinely ambiguous\", \"context\": \"why this matters\"}\n" +
@@ -1527,7 +1531,8 @@ function SmartPaste({ existingPerson, onSave, onBack }) {
       "- For Gemini meet summaries, extract all pet details, feeding, walking spots, house logistics thoroughly\n" +
       "- reply_needed should be false if a reply was already sent and visible in the thread\n" +
       "- Only include clarifications if genuinely ambiguous — max 2\n" +
-      "- suggested_reply must be in Freddies voice: warm, natural, British English, signs off as Freddie, no Best regards";
+      "- suggested_reply must be in Freddies voice: warm, natural, British English, signs off as Freddie, no Best regards\n" +
+      "- If booking is tentative with a follow-up due date, include an action with the due date";
   };
 
   const analyse = async function() {
@@ -1620,6 +1625,15 @@ function SmartPaste({ existingPerson, onSave, onBack }) {
         notes: booking.notes || "",
       });
     });
+
+    // Save actions to storedActions so they appear on Today page
+    if (result.actions && result.actions.length > 0) {
+      const existing = db.get("storedActions") || [];
+      const newActions = result.actions.map(function(a) {
+        return { id: uid(), personId, type: a.type, description: a.description, urgency: a.urgency, due: a.due || null, done: false, createdAt: nowStr() };
+      });
+      db.set("storedActions", existing.concat(newActions));
+    }
 
     showToast("Saved!");
     return personId;
@@ -2532,45 +2546,52 @@ function TabToday({ onOpenPerson }) {
         <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, color: "var(--purple)", marginTop: 6 }}>{new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}</div>
       </div>
 
-      <div className="section-label">VISITS AND WALKS TODAY</div>
+      <div className="section-label">TODAY</div>
       {todayVisits.length === 0 ? (
         <div style={{ padding: "8px 16px 4px" }}><div className="text-sm text-muted">No visits booked today 🌿</div></div>
       ) : todayVisits.map(function(v) { return renderVisit(v, true); })}
 
-      {tomorrowVisits.length > 0 && (
-        <div>
-          <div className="section-label">TOMORROW</div>
-          {tomorrowVisits.map(function(v) { return renderVisit(v, false); })}
-        </div>
-      )}
+      <div className="section-label">TOMORROW</div>
+      {tomorrowVisits.length === 0 ? (
+        <div style={{ padding: "8px 16px 4px" }}><div className="text-sm text-muted">Nothing booked tomorrow</div></div>
+      ) : tomorrowVisits.map(function(v) { return renderVisit(v, false); })}
 
       <div className="section-label">TO DO</div>
-      {actions.length === 0 ? (
-        <div style={{ padding: "8px 16px 4px" }}><div className="text-sm text-muted">All caught up 🎉</div></div>
-      ) : actions.map(function(action) {
-        const actionId = action.personId + "-" + action.type;
-        const done = completedActions[actionId];
-        const p = people.find(function(x) { return x.id === action.personId; });
-        return (
-          <div key={actionId} className="card" style={{ opacity: done ? 0.4 : 1 }}>
-            <div className="check-row">
-              <CheckBox done={done} onToggle={function() { toggleAction(actionId); }} />
-              <div style={{ flex: 1 }}>
-                <div className="row-between">
-                  <div className="row flex-1" style={{ cursor: "pointer" }} onClick={function() { if (!done && p) onOpenPerson(p.id); }}>
-                    <span className="dot" style={{ background: action.urgency === "high" ? "var(--orange)" : action.urgency === "medium" ? "var(--yellow)" : "var(--muted2)" }} />
-                    <span style={{ fontWeight: 600, fontSize: 13 }}>{action.label}</span>
+      {(function() {
+        // Merge computed actions with stored actions from Smart Paste
+        const storedActions = db.get("storedActions") || [];
+        const todayDate = todayStr();
+        const dueToday = storedActions.filter(function(a) { return !a.done && (!a.due || a.due <= todayDate); });
+        const allActions = actions.concat(dueToday.map(function(a) { return { personId: a.personId, type: a.type, label: a.description, urgency: a.urgency, stage: "", storedId: a.id, due: a.due }; }));
+        if (allActions.length === 0) return <div style={{ padding: "8px 16px 4px" }}><div className="text-sm text-muted">All caught up 🎉</div></div>;
+        return allActions.map(function(action) {
+          const actionId = action.storedId || (action.personId + "-" + action.type);
+          const done = completedActions[actionId];
+          const p = people.find(function(x) { return x.id === action.personId; });
+          return (
+            <div key={actionId} className="card" style={{ opacity: done ? 0.4 : 1 }}>
+              <div className="check-row">
+                <CheckBox done={done} onToggle={function() { toggleAction(actionId); }} />
+                <div style={{ flex: 1 }}>
+                  <div className="row-between">
+                    <div className="row flex-1" style={{ cursor: "pointer" }} onClick={function() { if (!done && p) onOpenPerson(p.id); }}>
+                      <span className="dot" style={{ background: action.urgency === "high" ? "var(--orange)" : action.urgency === "medium" ? "var(--yellow)" : "var(--muted2)" }} />
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: 13 }}>{action.label}</div>
+                        {action.due && <div className="text-xs text-muted mt-2">{action.due === todayDate ? "Today" : fmtDate(action.due)}</div>}
+                      </div>
+                    </div>
+                    {!done && p && (
+                      <button className="btn btn-primary btn-sm" style={{ marginLeft: 8, flexShrink: 0 }} onClick={function() { onOpenPerson(p.id); }}>Open →</button>
+                    )}
                   </div>
-                  {!done && p && (
-                    <button className="btn btn-primary btn-sm" style={{ marginLeft: 8, flexShrink: 0 }} onClick={function() { onOpenPerson(p.id); }}>💬 Reply</button>
-                  )}
+                  {action.stage && <div className="mt-4"><StagePill stageId={action.stage} /></div>}
                 </div>
-                <div className="mt-4"><StagePill stageId={action.stage} /></div>
               </div>
             </div>
-          </div>
-        );
-      })}
+          );
+        });
+      })()}
 
       {waiting.length > 0 && (
         <div>
@@ -2724,8 +2745,9 @@ function TabSchedule({ onOpenPerson }) {
     const cats = db.getAll("cats").filter(function(c) { return c.personId === v.personId; });
     const petNames = dogs.map(function(d) { return d.name; }).concat(cats.map(function(c) { return c.name; })).filter(Boolean).join(", ");
     const svc = SERVICE_MAP[v.serviceType];
+    const isTentative = v.status === "tentative";
     return (
-      <div key={v.id} className="card card-tap card-sm" style={{ opacity: isPast || v.status === "completed" ? 0.5 : 1 }} onClick={function() { if (p) onOpenPerson(p.id); }}>
+      <div key={v.id} className="card card-tap card-sm" style={{ opacity: isPast || v.status === "completed" ? 0.5 : 1, borderColor: isTentative ? "rgba(253,203,110,0.4)" : undefined }} onClick={function() { if (p) onOpenPerson(p.id); }}>
         <div className="row-between">
           <div>
             <div className="row" style={{ gap: 6 }}>
@@ -2734,9 +2756,10 @@ function TabSchedule({ onOpenPerson }) {
             </div>
             <div className="text-xs text-muted mt-2">{p && p.name}{petNames && p ? " · " : ""}{petNames}{v.duration ? " · " + v.duration : ""}</div>
           </div>
-          <div>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+            {isTentative && <span className="badge badge-yellow">Tentative</span>}
             {v.status === "completed" && <span className="badge badge-green">Done</span>}
-            {v.isMeetGreet && v.status !== "completed" && <span className="badge badge-yellow">Meet</span>}
+            {v.isMeetGreet && v.status !== "completed" && !isTentative && <span className="badge badge-yellow">Meet</span>}
           </div>
         </div>
       </div>
@@ -2763,7 +2786,22 @@ function TabSchedule({ onOpenPerson }) {
       {/* ── LIST VIEW */}
       {viewMode === "list" && (
         <div>
-          {upcoming.length === 0 && <div className="empty-state"><div className="icon">📅</div><h3>Nothing booked yet</h3><p>Add visits from a client's Bookings tab</p></div>}
+          {past.length > 0 && (
+            <div>
+              <div className="section-label" style={{ marginTop: 4 }}>RECENT</div>
+              {past.reverse().map(function(dateStr) {
+                const d = new Date(dateStr + "T12:00:00");
+                return (
+                  <div key={dateStr}>
+                    <div className="section-label" style={{ fontSize: 11, opacity: 0.7 }}>{d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}</div>
+                    {grouped[dateStr].map(function(v) { return renderVisitCard(v, true); })}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {upcoming.length === 0 && past.length === 0 && <div className="empty-state"><div className="icon">📅</div><h3>Nothing booked yet</h3><p>Add visits from a client's Bookings tab</p></div>}
+          {upcoming.length > 0 && <div className="section-label" style={{ color: "var(--green)", marginTop: past.length > 0 ? 8 : 4 }}>UPCOMING</div>}
           {upcoming.map(function(dateStr) {
             const d = new Date(dateStr + "T12:00:00");
             const isToday = dateStr === today;
@@ -2776,20 +2814,6 @@ function TabSchedule({ onOpenPerson }) {
               </div>
             );
           })}
-          {past.length > 0 && (
-            <div>
-              <div className="section-label" style={{ marginTop: 24 }}>RECENT</div>
-              {past.map(function(dateStr) {
-                const d = new Date(dateStr + "T12:00:00");
-                return (
-                  <div key={dateStr}>
-                    <div className="section-label" style={{ fontSize: 11, opacity: 0.6 }}>{d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}</div>
-                    {grouped[dateStr].map(function(v) { return renderVisitCard(v, true); })}
-                  </div>
-                );
-              })}
-            </div>
-          )}
         </div>
       )}
 
