@@ -1,9 +1,5 @@
 {
-  "rewrites": [
-    { "source": "/api/auth/callback", "destination": "/api/auth/callback" },
-    { "source": "/api/auth/login", "destination": "/api/auth/login" },
-    { "source": "/api/calendar", "destination": "/api/calendar" },
-    { "source": "/api/chat", "destination": "/api/chat" }
-  ]
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "framework": "vite"
 }
-
