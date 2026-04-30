@@ -1,11 +1,13 @@
 async function getValidToken(email) {
+  const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+  const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
   const key = "gcal_token_" + (email || "default");
   const r = await fetch(
-    process.env.VITE_SUPABASE_URL + "/rest/v1/app_settings?key=eq." + key + "&select=data",
+    supabaseUrl + "/rest/v1/app_settings?key=eq." + key + "&select=data",
     {
       headers: {
-        "apikey": process.env.VITE_SUPABASE_ANON_KEY,
-        "Authorization": "Bearer " + process.env.VITE_SUPABASE_ANON_KEY,
+        "apikey": supabaseKey,
+        "Authorization": "Bearer " + supabaseKey,
       },
     }
   );
@@ -34,11 +36,13 @@ async function getValidToken(email) {
       expiry: Date.now() + (refreshed.expires_in * 1000),
     });
     // Save refreshed token
-    await fetch(process.env.VITE_SUPABASE_URL + "/rest/v1/app_settings", {
+    const supabaseUrl2 = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+    const supabaseKey2 = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+    await fetch(supabaseUrl2 + "/rest/v1/app_settings", {
       method: "POST",
       headers: {
-        "apikey": process.env.VITE_SUPABASE_ANON_KEY,
-        "Authorization": "Bearer " + process.env.VITE_SUPABASE_ANON_KEY,
+        "apikey": supabaseKey2,
+        "Authorization": "Bearer " + supabaseKey2,
         "Content-Type": "application/json",
         "Prefer": "resolution=merge-duplicates,return=minimal",
       },
@@ -89,11 +93,11 @@ export default async function handler(req, res) {
     // Check which accounts are connected
     try {
       const r = await fetch(
-        process.env.VITE_SUPABASE_URL + "/rest/v1/app_settings?key=like.gcal_token_%&select=key,data",
+        (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL) + "/rest/v1/app_settings?key=like.gcal_token_%&select=key,data",
         {
           headers: {
-            "apikey": process.env.VITE_SUPABASE_ANON_KEY,
-            "Authorization": "Bearer " + process.env.VITE_SUPABASE_ANON_KEY,
+            "apikey": (process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY),
+            "Authorization": "Bearer " + (process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY),
           },
         }
       );
@@ -146,4 +150,3 @@ export default async function handler(req, res) {
 
   return res.status(405).json({ error: "Method not allowed" });
 }
-
