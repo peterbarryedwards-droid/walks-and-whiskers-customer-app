@@ -427,6 +427,40 @@ function extractJSON(text) {
   return {};
 }
 
+/* GOOGLE CALENDAR */
+async function gcalConnect(email) {
+  window.location.href = "/api/auth/login" + (email ? "?state=" + encodeURIComponent(email) : "");
+}
+
+async function gcalCreateEvent(booking) {
+  try {
+    const statusRes = await fetch("/api/calendar?action=status");
+    const status = await statusRes.json();
+    if (!status.connected || status.connected.length === 0) return null;
+    const results = [];
+    for (const account of status.connected) {
+      const r = await fetch("/api/calendar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "create", email: account.email, booking }),
+      });
+      const data = await r.json();
+      if (data.eventId) results.push({ email: account.email, eventId: data.eventId });
+    }
+    return results;
+  } catch(e) { console.error("gcal create failed:", e); return null; }
+}
+
+async function gcalDeleteEvent(eventId, email) {
+  try {
+    await fetch("/api/calendar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "delete", email, eventId }),
+    });
+  } catch(e) { console.error("gcal delete failed:", e); }
+}
+
 function parseSections(text) {
   const headers = ["DRAFT REPLY", "QUESTIONS TO ASK", "WHAT TO MENTION", "MISSING INFO TO GET", "ONE TIP"];
   const sections = [];
@@ -1738,7 +1772,7 @@ function SmartPaste({ existingPerson, onSave, onBack }) {
       }
     });
 
-    // Save bookings
+    // Save bookings and push confirmed ones to Google Calendar
     (result.bookings || []).forEach(function(booking) {
       if (!booking.date) return;
       const svcType = booking.type === "overnight" || booking.type === "day_visit" ? "home_sit" :
@@ -1755,6 +1789,29 @@ function SmartPaste({ existingPerson, onSave, onBack }) {
         amount: booking.amount_paid ? String(booking.amount_paid) : "",
         notes: booking.notes || "",
       });
+      // Push confirmed bookings to Google Calendar
+      if (booking.status === "confirmed") {
+        const dogs = db.getAll("dogs").filter(function(d) { return d.personId === personId; });
+        const cats = db.getAll("cats").filter(function(c) { return c.personId === personId; });
+        const petNames = dogs.map(function(d) { return d.name; }).concat(cats.map(function(c) { return c.name; })).filter(Boolean);
+        const allPets = dogs.concat(cats);
+        const careNotesParts = [];
+        allPets.forEach(function(pet) {
+          if (pet.healthNotes) careNotesParts.push("⚠️ " + (pet.name || "Pet") + ": " + pet.healthNotes);
+          if (pet.personality && pet.personality.toLowerCase().indexOf("alone") !== -1) careNotesParts.push(pet.personality);
+        });
+        gcalCreateEvent({
+          date: booking.date,
+          timeStart: booking.time_start,
+          timeEnd: booking.time_end,
+          serviceType: svcType,
+          petNames,
+          ownerName: person.name,
+          ownerAddress: person.address,
+          careNotes: careNotesParts.join("\n") || null,
+          isMeetGreet: booking.type === "meet_greet",
+        });
+      }
     });
 
     // Auto-add follow-up actions for tentative bookings
@@ -2780,14 +2837,37 @@ function PersonDetail({ personId, onBack, onUpdate }) {
 function TabToday({ onOpenPerson }) {
   const [completedActions, setCompletedActions] = useState(function() {
     const saved = db.get("completedActions") || {};
-    // Clear if saved on a different day
     if (saved._date !== todayStr()) return { _date: todayStr() };
     return saved;
   });
   const [completedVisits, setCompletedVisits] = useState(function() {
     return db.get("completedVisits") || {};
   });
-  const [pendingDone, setPendingDone] = useState(null); // visitId waiting for confirm
+  const [pendingDone, setPendingDone] = useState(null);
+  const [gcalAccounts, setGcalAccounts] = useState([]);
+  const [gcalToast, setGcalToast] = useState(null);
+
+  // Check gcal status on load and handle OAuth callback
+  useEffect(function() {
+    fetch("/api/calendar?action=status").then(function(r) { return r.json(); }).then(function(d) {
+      setGcalAccounts(d.connected || []);
+    }).catch(function() {});
+
+    // Handle OAuth callback params
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("gcal") === "connected") {
+      const email = params.get("email");
+      setGcalToast("✅ Google Calendar connected" + (email ? " (" + email + ")" : ""));
+      setTimeout(function() { setGcalToast(null); }, 4000);
+      window.history.replaceState({}, "", window.location.pathname);
+      fetch("/api/calendar?action=status").then(function(r) { return r.json(); }).then(function(d) { setGcalAccounts(d.connected || []); }).catch(function() {});
+    }
+    if (params.get("gcal") === "error") {
+      setGcalToast("❌ Calendar connection failed — try again");
+      setTimeout(function() { setGcalToast(null); }, 4000);
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+  }, []);
 
   const people = db.getAll("people");
   const visits = db.getAll("visits");
@@ -2875,6 +2955,23 @@ function TabToday({ onOpenPerson }) {
         <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 32, lineHeight: 1 }}>{greeting + ", Freddie 👋"}</div>
         <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, color: "var(--purple)", marginTop: 6 }}>{new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}</div>
       </div>
+
+      {/* Google Calendar connection */}
+      {gcalAccounts.length === 0 ? (
+        <div style={{ padding: "0 16px 4px" }}>
+          <button className="btn btn-ghost btn-sm" style={{ color: "var(--muted)", fontSize: 12, border: "1px dashed var(--border)" }} onClick={function() { gcalConnect(); }}>
+            📅 Connect Google Calendar
+          </button>
+        </div>
+      ) : (
+        <div style={{ padding: "0 16px 4px", display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {gcalAccounts.map(function(acc) {
+            return <div key={acc.email} style={{ fontSize: 11, color: "var(--green)", background: "rgba(0,184,148,0.08)", borderRadius: 8, padding: "3px 8px" }}>📅 {acc.email}</div>;
+          })}
+          <button className="btn btn-ghost btn-sm" style={{ fontSize: 11, padding: "2px 8px" }} onClick={function() { gcalConnect(); }}>+ Add account</button>
+        </div>
+      )}
+      {gcalToast && <div className="toast">{gcalToast}</div>}
 
       <div className="section-label">TODAY</div>
       {todayVisits.length === 0 ? (
