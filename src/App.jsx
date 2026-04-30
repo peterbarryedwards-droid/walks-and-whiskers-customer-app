@@ -429,7 +429,7 @@ function extractJSON(text) {
 
 /* GOOGLE CALENDAR */
 async function gcalConnect(email) {
-  window.location.href = "/api/auth/login" + (email ? "?state=" + encodeURIComponent(email) : "");
+  window.location.href = "/api/gcal-login" + (email ? "?state=" + encodeURIComponent(email) : "");
 }
 
 async function gcalCreateEvent(booking) {
