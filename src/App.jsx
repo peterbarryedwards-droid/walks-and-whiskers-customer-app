@@ -388,7 +388,7 @@ const PROMPTS = {
 async function callClaude(prompt, maxTokens) {
   const tokens = maxTokens || 1200;
   const controller = new AbortController();
-  const tid = setTimeout(() => controller.abort(), 30000);
+  const tid = setTimeout(() => controller.abort(), 45000); // 45s for complex Smart Paste calls
   try {
     const r = await fetch("/api/chat", {
       method: "POST", signal: controller.signal,
@@ -405,8 +405,26 @@ async function callClaude(prompt, maxTokens) {
 
 async function callClaudeJSON(prompt) {
   const text = await callClaude(prompt, 1200);
+  return extractJSON(text);
+}
+
+function extractJSON(text) {
+  // Try direct parse first
   const clean = text.replace(new RegExp("```json|```", "g"), "").trim();
-  try { return JSON.parse(clean); } catch { return {}; }
+  try { return JSON.parse(clean); } catch {}
+  // Try to find JSON object within the text
+  const firstBrace = clean.indexOf("{");
+  const lastBrace = clean.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    try { return JSON.parse(clean.slice(firstBrace, lastBrace + 1)); } catch {}
+  }
+  // Try to find JSON array
+  const firstBracket = clean.indexOf("[");
+  const lastBracket = clean.lastIndexOf("]");
+  if (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket) {
+    try { return JSON.parse(clean.slice(firstBracket, lastBracket + 1)); } catch {}
+  }
+  return {};
 }
 
 function parseSections(text) {
@@ -1623,18 +1641,27 @@ function SmartPaste({ existingPerson, onSave, onBack }) {
   const analyse = async function() {
     if (!pasteText.trim()) return;
     setStep("loading");
-    try {
-      const raw = await callClaude(buildPrompt(pasteText), 4000);
-      const clean = raw.replace(new RegExp("```json|```", "g"), "").trim();
-      const parsed = JSON.parse(clean);
-      setResult(parsed);
-      setReplyText(parsed.suggested_reply || "");
-      setStep("review");
-    } catch(e) {
-      console.error("SmartPaste failed:", e);
-      showToast("Could not read that — try again");
-      setStep("paste");
+    let lastError = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const raw = await callClaude(buildPrompt(pasteText), 4000);
+        const parsed = extractJSON(raw);
+        if (!parsed || typeof parsed !== "object" || (!parsed.client && !parsed.summary && !parsed.pets)) {
+          throw new Error("Invalid response structure");
+        }
+        setResult(parsed);
+        setReplyText(parsed.suggested_reply || "");
+        setStep("review");
+        return;
+      } catch(e) {
+        lastError = e;
+        console.error("SmartPaste attempt " + (attempt + 1) + " failed:", e);
+        if (attempt < 2) await new Promise(function(r) { setTimeout(r, 1000); });
+      }
     }
+    console.error("SmartPaste failed after 3 attempts:", lastError);
+    showToast("Could not read that — try again");
+    setStep("paste");
   };
 
   const saveAll = function() {
@@ -1759,25 +1786,32 @@ function SmartPaste({ existingPerson, onSave, onBack }) {
   const applyCorrection = async function() {
     if (!correctionText.trim()) return;
     setCorrecting(true);
-    try {
-      const clarAnswers = Object.entries(clarificationAnswers).map(function(e) { return "Q: " + e[0] + " A: " + e[1]; }).join("\n");
-      const correctionPrompt = buildPrompt(pasteText) +
-        "\n\nPREVIOUSLY EXTRACTED:\n" + JSON.stringify(result, null, 2) +
-        "\n\nFREDDIE'S CORRECTION / ADDITIONAL INFO:\n" + correctionText +
-        (clarAnswers ? "\n\nANSWERS TO CLARIFICATION QUESTIONS:\n" + clarAnswers : "") +
-        "\n\nPlease re-extract with this correction applied. Return updated JSON only.";
-      const raw = await callClaude(correctionPrompt, 4000);
-      const clean = raw.replace(new RegExp("```json|```", "g"), "").trim();
-      const parsed = JSON.parse(clean);
-      setResult(parsed);
-      setReplyText(parsed.suggested_reply || replyText);
-      setCorrectionText("");
-      setClarificationAnswers({});
-      showToast("Updated ✓");
-    } catch(e) {
-      console.error("Correction failed:", e);
-      showToast("Could not update — try again");
+    let lastError = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const clarAnswers = Object.entries(clarificationAnswers).map(function(e) { return "Q: " + e[0] + " A: " + e[1]; }).join("\n");
+        const correctionPrompt = buildPrompt(pasteText) +
+          "\n\nPREVIOUSLY EXTRACTED:\n" + JSON.stringify(result, null, 2) +
+          "\n\nFREDDIE'S CORRECTION / ADDITIONAL INFO:\n" + correctionText +
+          (clarAnswers ? "\n\nANSWERS TO CLARIFICATION QUESTIONS:\n" + clarAnswers : "") +
+          "\n\nPlease re-extract with this correction applied. Return updated JSON only.";
+        const raw = await callClaude(correctionPrompt, 4000);
+        const parsed = extractJSON(raw);
+        if (!parsed || typeof parsed !== "object") throw new Error("Invalid JSON");
+        setResult(parsed);
+        setReplyText(parsed.suggested_reply || replyText);
+        setCorrectionText("");
+        setClarificationAnswers({});
+        showToast("Updated ✓");
+        setCorrecting(false);
+        return;
+      } catch(e) {
+        lastError = e;
+        if (attempt < 2) await new Promise(function(r) { setTimeout(r, 1000); });
+      }
     }
+    console.error("Correction failed:", lastError);
+    showToast("Could not update — try again");
     setCorrecting(false);
   };
 
@@ -3118,9 +3152,9 @@ function TabSchedule({ onOpenPerson }) {
       {viewMode === "week" && (
         <div>
           <div className="row" style={{ padding: "4px 16px 12px", gap: 8, alignItems: "center" }}>
-            <button className="btn btn-ghost btn-sm" style={{ width: "auto", padding: "6px 12px" }} onClick={function() { setWeekOffset(function(o) { return o - 1; }); }}>‹</button>
+            <button className="btn btn-ghost btn-sm" style={{ width: "auto", padding: "6px 12px", color: "var(--text)" }} onClick={function() { setWeekOffset(function(o) { return o - 1; }); }}>‹</button>
             <div style={{ flex: 1, textAlign: "center", fontFamily: "'Bebas Neue', sans-serif", fontSize: 16, letterSpacing: 1, color: weekOffset === 0 ? "var(--green)" : "var(--text)" }}>{weekLabel.toUpperCase()}</div>
-            <button className="btn btn-ghost btn-sm" style={{ width: "auto", padding: "6px 12px" }} onClick={function() { setWeekOffset(function(o) { return o + 1; }); }}>›</button>
+            <button className="btn btn-ghost btn-sm" style={{ width: "auto", padding: "6px 12px", color: "var(--text)" }} onClick={function() { setWeekOffset(function(o) { return o + 1; }); }}>›</button>
           </div>
           {weekDays.map(function(dateStr) {
             const d = new Date(dateStr + "T12:00:00");
