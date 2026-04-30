@@ -26,12 +26,15 @@ export default async function handler(req, res) {
     });
     const user = await userRes.json();
 
+    const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
+    const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+
     const key = "gcal_token_" + (user.email || state || "default");
-    await fetch(process.env.VITE_SUPABASE_URL + "/rest/v1/app_settings", {
+    await fetch(supabaseUrl + "/rest/v1/app_settings", {
       method: "POST",
       headers: {
-        "apikey": process.env.VITE_SUPABASE_ANON_KEY,
-        "Authorization": "Bearer " + process.env.VITE_SUPABASE_ANON_KEY,
+        "apikey": supabaseKey,
+        "Authorization": "Bearer " + supabaseKey,
         "Content-Type": "application/json",
         "Prefer": "resolution=merge-duplicates,return=minimal",
       },
@@ -51,8 +54,7 @@ export default async function handler(req, res) {
     return res.redirect(302, appUrl + "?gcal=connected&email=" + encodeURIComponent(user.email));
   } catch (e) {
     console.error("OAuth callback error:", e);
-    const appUrl = process.env.GOOGLE_REDIRECT_URI.replace("/api/gcal-callback", "");
+    const appUrl = (process.env.GOOGLE_REDIRECT_URI || "").replace("/api/gcal-callback", "") || "https://walks-and-whiskers-customer-app.vercel.app";
     return res.redirect(302, appUrl + "?gcal=error&msg=" + encodeURIComponent(e.message));
   }
 }
-
