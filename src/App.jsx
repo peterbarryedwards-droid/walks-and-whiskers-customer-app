@@ -326,7 +326,8 @@ const TONE = `Voice and tone rules — read carefully:
 - Sign off: just "Freddie" or "Speak soon, Freddie" — never "Best regards", never "Kind regards"
 - No hollow phrases: not "that sounds wonderful", "great to hear from you", "I hope this finds you well"
 - No over-formal language: not "I would suggest", "please do not hesitate", "I'd be happy to assist"
-- Short sentences. Natural rhythm. British English.`;
+- Short sentences. Natural rhythm. British English.
+- HONESTY ABOUT EXPERIENCE: If Freddie expresses uncertainty or limited experience in the message context (e.g. with a specific animal or situation), the reply must reflect that honestly. Do NOT default to confident enthusiasm. If he has some relevant experience but not a lot, say so naturally — e.g. "I haven't done loads of rabbit sitting but I covered small animals in my animal management course, so I have a good base." Then leave the door open with a soft check-in rather than an assumptive close — e.g. "Does that sound like something you'd be comfortable with?" rather than "Let's get a visit booked."`;
 
 const PROMPTS = {
   new_client: (platform, prices, service) => {
@@ -860,7 +861,12 @@ function MessagingFlow({ person, onBack, onPersonUpdated, onEditMsg, onDeleteMsg
     else if (et === "quote") systemPrompt = PROMPTS.quote(platform, pricesText());
     else if (et === "confirm") systemPrompt = PROMPTS.confirm();
     else systemPrompt = PROMPTS.decline();
-    const prompt = systemPrompt + "\n\nPlatform: " + platform + "\nOriginal message: " + rawMessage + (history ? "\n\nConversation so far:\n" + history : "") + "\n\nKnown information:\n" + (context || "(none)");
+    const uncertaintyNote = (function() {
+      const combined = (rawMessage + " " + history).toLowerCase();
+      const uncertain = combined.indexOf("not sure") !== -1 || combined.indexOf("haven't done") !== -1 || combined.indexOf("don't have much") !== -1 || combined.indexOf("haven't got") !== -1 || combined.indexOf("some experience") !== -1 || combined.indexOf("not loads") !== -1 || combined.indexOf("not a lot") !== -1 || combined.indexOf("limited experience") !== -1 || combined.indexOf("haven't looked after") !== -1;
+      return uncertain ? "\n\nNOTE: The conversation suggests Freddie has expressed some uncertainty about his experience with this type of job. The reply must reflect this honestly — do not project confidence he hasn't shown. Use a soft check-in close ('Does that sound ok?' / 'Happy with that?') rather than assuming the job is going ahead." : "";
+    })();
+    const prompt = systemPrompt + "\n\nPlatform: " + platform + "\nOriginal message: " + rawMessage + (history ? "\n\nConversation so far:\n" + history : "") + "\n\nKnown information:\n" + (context || "(none)") + uncertaintyNote;
     const curStage = (currentPerson && currentPerson.stage) || "new_enquiry";
     const isNewEnquiry = curStage === "new_enquiry" || !currentPerson;
     const intentPrompt = "Read this client message and return JSON only:\nMessage: \"" + rawMessage + "\"\nConversation: \"" + history + "\"\nCurrent stage: " + curStage + "\n" +
@@ -1521,79 +1527,97 @@ function SmartPaste({ existingPerson, onSave, onBack }) {
   const buildPrompt = function(text) {
     const existingDogs = existingPerson ? db.getAll("dogs").filter(function(d) { return d.personId === existingPerson.id; }) : [];
     const existingCats = existingPerson ? db.getAll("cats").filter(function(c) { return c.personId === existingPerson.id; }) : [];
-    const petList = existingDogs.map(function(d) { return d.name + " (dog)"; }).concat(existingCats.map(function(c) { return c.name + " (cat)"; })).join(", ");
+    const existingVisits = existingPerson ? db.getAll("visits").filter(function(v) { return v.personId === existingPerson.id; }) : [];
+
+    const existingPetsJson = JSON.stringify(
+      existingDogs.map(function(d) { return { id: d.id, type: "dog", name: d.name, breed: d.breed, age: d.age }; })
+      .concat(existingCats.map(function(c) { return { id: c.id, type: "cat", name: c.name, age: c.age }; }))
+    );
+    const existingBookingsJson = JSON.stringify(
+      existingVisits.map(function(v) { return { id: v.id, date: v.date, type: v.serviceType, status: v.status, isMeetGreet: v.isMeetGreet }; })
+    );
+
     const existingContext = existingPerson ? (
-      "\n\nEXISTING CLIENT (merge, do not overwrite unless new info explicitly updates):\n" +
+      "\n\nEXISTING CLIENT RECORD — use this to merge, deduplicate, and act on instructions:\n" +
       "Name: " + (existingPerson.name || "") + "\n" +
       "Address: " + (existingPerson.address || "") + "\n" +
       "Phone: " + (existingPerson.phone || "") + "\n" +
       "Service: " + (existingPerson.serviceType || "") + "\n" +
-      "Pets already on record: " + (petList || "none")
+      "Existing pets (with IDs): " + (existingPetsJson || "[]") + "\n" +
+      "Existing bookings (with IDs): " + (existingBookingsJson || "[]")
     ) : "";
 
     return "You are the AI brain for a pet care CRM for Freddie, a dog walker and pet carer in Winchester, aged 18.\n\n" +
+
+      "STEP 1 — CLASSIFY WHAT WAS PASTED:\n" +
+      "Before extracting anything, decide if this is:\n" +
+      "A) INFORMATION to extract (message, booking, thread, meet notes, web enquiry)\n" +
+      "B) AN INSTRUCTION from Freddie (e.g. 'remove the July booking', 'merge Alfie and Alfred', 'mark as tentative', 'add a follow-up reminder')\n" +
+      "C) BOTH — information plus an embedded instruction\n\n" +
+      "If B or C: act on the instruction using the existing record IDs above. Use the deletions array to remove items. Do not try to extract client data from instruction text.\n\n" +
+
       "FREDDIES BUSINESS:\n" +
-      "- Dog walk 30min £15, 60min £20. Dog drop-in visit £15. Cat visit £12. Home sitting from £40 per night. Stay overs from £40 per night.\n" +
+      "- Dog walk 30min £15, 60min £20. Dog drop-in £15. Cat visit £12. Home sitting from £40/night.\n" +
       "- Always does a meet and greet before first booking with a new client\n" +
-      "- Freddie works pub shifts at King Alfred: Friday evenings, Saturday evenings, Sunday afternoons. During these shifts FREDDIE is away, not a carer — dogs in Freddie's care cannot be left alone for more than 4 hours. His PARENTS cover for him during pub shifts when he is looking after pets, not Freddie himself covering.\n" +
-      "- Home sitting can be day visits OR overnight stays — must determine from context\n\n" +
-      "CONTENT TO ANALYSE:\n\"\"\"" + text + "\"\"\"" + existingContext + "\n\n" +
-      "This might be: a Rover or Bark booking confirmation, a WhatsApp or message thread, a web enquiry, a Gemini meet and greet summary, or any mix.\n\n" +
+      "- Pub shifts (King Alfred): Friday evenings, Saturday evenings, Sunday afternoons. FREDDIE is away during these — his PARENTS cover pets, not Freddie.\n" +
+      "- Home sitting can be day visits OR overnight — determine from context\n\n" +
+
+      "CONTENT:\n\"\"\"" + text + "\"\"\"" + existingContext + "\n\n" +
+
+      "PET DEDUPLICATION — CRITICAL:\n" +
+      "- Cross-reference ALL pet name mentions across the entire content\n" +
+      "- Common nicknames: Alfie = Alfred, Freddie = Frederick, Bella = Isabella, etc.\n" +
+      "- If a Gemini meet summary says 'Alfie' and a Rover block says 'Alfred' for the same client = ONE dog\n" +
+      "- If content says 'the puppy' or 'the dog' without a name, and there is already a named pet = same animal\n" +
+      "- If existing pets on record include a name that matches a nickname or formal name in the content = same animal, use existing ID\n" +
+      "- When in doubt, consolidate into fewer pets rather than creating duplicates\n\n" +
+
+      "SPECIES FROM ROVER PRICING IS AUTHORITATIVE:\n" +
+      "- If Rover charges 'Additional cat' rate for a pet = it IS a cat, regardless of the name\n" +
+      "- If Rover charges dog/holiday rate = it is a dog\n" +
+      "- Never override Rover pricing-based species with a guess based on the pet's name\n\n" +
+
       "ROVER FORMAT:\n" +
-      "- Times like 'Start: Fri 17 Apr at 8:00 - 8:00 / End: Fri 17 Apr at 18:30 - 19:30' are availability windows. Use first start time, last end time.\n" +
-      "- Same start and end date = DAY VISIT not overnight, regardless of booking label\n" +
-      "- Booking type label on Rover may be wrong — check actual dates to determine service\n" +
-      "- Pet names in 'With X, Y, Z' blocks — determine species from context and pricing (cat rates = cats)\n" +
-      "- Multiple Rover booking blocks may be same client and job split across different days\n" +
-      "- Rover payment amounts are what the CLIENT paid Rover, which includes Rover's fees. These are NOT necessarily what Freddie receives. Do NOT assume payment is confirmed unless the thread or messages explicitly confirm it.\n\n" +
-      "DATE RULES — CRITICAL:\n" +
-      "- ALWAYS expand date ranges into individual dates — one booking entry per day\n" +
-      "- 11th May to 25th May = 15 separate booking objects, each with their own date field\n" +
-      "- 20 Apr to 22 Apr = 3 booking objects: 2026-04-20, 2026-04-21, 2026-04-22\n" +
-      "- Current year is 2026 unless stated otherwise\n\n" +
-      "BOOKING STATUS — CRITICAL:\n" +
-      "- confirmed: Rover booking block received, explicit agreement in messages, OR payment confirmed\n" +
-      "- tentative: client said 'will confirm', 'let me know', 'block the diary', 'waiting to hear', 'I will get back to you'\n" +
-      "- Booking confirmed conversationally (e.g. 'I have 11th-25th May booked, 15 days x £40 = £600') = confirmed\n" +
-      "- If ANY uncertainty exists about whether the booking is going ahead, use tentative\n" +
-      "- amount_paid should only be non-zero if payment is explicitly confirmed. Rover booking blocks showing amounts do NOT mean payment is confirmed.\n\n" +
-      "THREAD READING:\n" +
-      "- WhatsApp threads often pasted newest-first — read the whole thing to understand full story\n" +
-      "- Resolution of confusion is in most recent messages\n" +
-      "- System messages like 'LAURA E. booked house sitting' are Rover confirmations\n" +
-      "- Look for booking confirmations in plain conversational text — 'I have 11th May to 25th May booked, 15 days x £40 = £600' = confirmed booking\n\n" +
-      "Return ONLY valid JSON with this exact structure:\n" +
+      "- Start/End times like '8:00 - 8:00' are windows. Use first start, last end.\n" +
+      "- Same start and end date = DAY VISIT not overnight\n" +
+      "- 'This booking is paid and confirmed' = confirmed, always\n" +
+      "- '[Name] paid £X on [date]' = payment confirmed = booking confirmed\n" +
+      "- Multiple Rover blocks may be same client/job across days\n\n" +
+
+      "BOOKING CONFIRMATION — CRITICAL:\n" +
+      "- confirmed: 'paid and confirmed', payment with amount and date, explicit 'yes go ahead', Rover system message saying booked\n" +
+      "- confirmed: conversational e.g. '15 days x £40 = £600 booked in my calendar'\n" +
+      "- tentative: 'will confirm', 'let me know', 'block the diary', 'waiting to hear', radio silence after initial enquiry\n" +
+      "- 'I need to verify tomorrow' from Freddie = NOT confirmed yet\n\n" +
+
+      "DATE RULES:\n" +
+      "- Expand ALL date ranges — one booking per day\n" +
+      "- 13 Aug to 22 Aug = 10 entries: 2026-08-13 through 2026-08-22\n" +
+      "- Current year 2026 unless stated\n\n" +
+
+      "Return ONLY valid JSON:\n" +
       "{\n" +
-      "  \"client\": {\"name\": null, \"phone\": null, \"email\": null, \"address\": null, \"postcode\": null, \"platform\": \"Rover or Bark or Direct or Other\"},\n" +
-      "  \"pets\": [\n" +
-      "    {\"type\": \"dog or cat\", \"name\": null, \"breed\": null, \"age\": null, \"personality\": null, \"feeding\": null, \"walking_spots\": null, \"recall\": null, \"lead_behaviour\": null, \"health\": null, \"vet\": null, \"vet_phone\": null, \"house_notes\": null}\n" +
-      "  ],\n" +
-      "  \"bookings\": [\n" +
-      "    {\"type\": \"day_visit or overnight or dog_walk or cat_visit or dog_drop_in or meet_greet\", \"status\": \"confirmed or tentative\", \"date\": \"YYYY-MM-DD\", \"time_start\": \"HH:MM or null\", \"time_end\": \"HH:MM or null\", \"amount_paid\": 0, \"notes\": null}\n" +
-      "  ],\n" +
+      "  \"client\": {\"name\": null, \"phone\": null, \"email\": null, \"address\": null, \"postcode\": null, \"platform\": null},\n" +
+      "  \"pets\": [{\"type\": \"dog or cat\", \"existingId\": \"existing pet ID if updating, or null\", \"name\": null, \"breed\": null, \"age\": null, \"personality\": null, \"feeding\": null, \"walking_spots\": null, \"recall\": null, \"lead_behaviour\": null, \"health\": null, \"vet\": null, \"vet_phone\": null, \"house_notes\": null}],\n" +
+      "  \"bookings\": [{\"type\": \"day_visit or overnight or dog_walk or cat_visit or dog_drop_in or meet_greet\", \"status\": \"confirmed or tentative\", \"date\": \"YYYY-MM-DD\", \"time_start\": null, \"time_end\": null, \"amount_paid\": 0, \"notes\": null}],\n" +
+      "  \"deletions\": [{\"type\": \"booking or pet\", \"id\": \"existing ID to delete\", \"reason\": \"why\"}],\n" +
       "  \"house_notes\": null,\n" +
       "  \"schedule_notes\": null,\n" +
       "  \"access_notes\": null,\n" +
-      "  \"reply_needed\": true,\n" +
+      "  \"reply_needed\": false,\n" +
       "  \"suggested_reply\": null,\n" +
-      "  \"actions\": [\n" +
-      "    {\"type\": \"chase_up or follow_up or arrange_meet or send_payment_details or clarify or add_to_calendar\", \"description\": \"plain English for Freddie\", \"urgency\": \"high or medium or low\", \"due\": \"YYYY-MM-DD or null\"}\n" +
-      "  ],\n" +
-      "  \"clarifications\": [\n" +
-      "    {\"question\": \"something genuinely ambiguous\", \"context\": \"why this matters\"}\n" +
-      "  ],\n" +
-      "  \"stage\": \"new_enquiry or replied or interested or meet_arranged or met or active or tentative or confirmed\",\n" +
-      "  \"summary\": \"2-3 sentence plain English summary of the whole situation for Freddie\"\n" +
+      "  \"actions\": [{\"type\": \"chase_up or follow_up or arrange_meet or send_payment_details or clarify\", \"description\": null, \"urgency\": \"high or medium or low\", \"due\": null}],\n" +
+      "  \"clarifications\": [{\"question\": null, \"context\": null}],\n" +
+      "  \"stage\": null,\n" +
+      "  \"summary\": \"2-3 sentence summary for Freddie\"\n" +
       "}\n\n" +
-      "CRITICAL RULES:\n" +
-      "- bookings array must have ONE entry per day — expand ALL date ranges\n" +
-      "- For a 15 night stay 11th to 25th May: create 15 separate booking objects each with different YYYY-MM-DD date\n" +
-      "- Detect ALL pets not just the first one\n" +
-      "- For Gemini meet summaries, extract all pet details, feeding, walking spots, house logistics thoroughly\n" +
-      "- reply_needed should be false if a reply was already sent and visible in the thread\n" +
-      "- Only include clarifications if genuinely ambiguous — max 2\n" +
-      "- suggested_reply must be in Freddies voice: warm, natural, British English, signs off as Freddie, no Best regards\n" +
-      "- If booking is tentative with a follow-up due date, include an action with the due date";
+      "RULES:\n" +
+      "- ONE booking per day, expand all ranges\n" +
+      "- Use existingId on pets if updating an existing pet record\n" +
+      "- Use deletions array for 'remove booking', 'delete tentative', 'merge pets' instructions\n" +
+      "- reply_needed false if reply already sent in thread\n" +
+      "- Max 2 clarifications, only if genuinely ambiguous\n" +
+      "- Gemini summaries: extract ALL pet details, feeding, walking, house logistics thoroughly";
   };
 
   const analyse = async function() {
@@ -1646,30 +1670,48 @@ function SmartPaste({ existingPerson, onSave, onBack }) {
     });
     db.upsert("people", person);
 
+    // Handle deletions first
+    (result.deletions || []).forEach(function(del) {
+      if (!del.id) return;
+      if (del.type === "booking") db.remove("visits", del.id);
+      if (del.type === "pet") { db.remove("dogs", del.id); db.remove("cats", del.id); }
+    });
+
+    // Save pets — use existingId if provided, otherwise match by name or create new
     (result.pets || []).forEach(function(pet) {
       if (!pet.name) return;
       if (pet.type === "cat") {
-        const ec = db.getAll("cats").find(function(c) { return c.personId === personId && c.name && c.name.toLowerCase() === pet.name.toLowerCase(); });
+        const byId = pet.existingId ? db.getAll("cats").find(function(c) { return c.id === pet.existingId; }) : null;
+        const byName = db.getAll("cats").find(function(c) { return c.personId === personId && c.name && c.name.toLowerCase() === pet.name.toLowerCase(); });
+        const ec = byId || byName;
         db.upsert("cats", Object.assign({}, ec || {}, {
           id: (ec && ec.id) || uid(), personId,
-          name: pet.name, age: pet.age || "", feedingRoutine: pet.feeding || "",
-          personality: pet.personality || "", indoorOutdoor: "", litterNotes: "",
-          medication: "No", medicationNotes: "",
+          name: pet.name, age: pet.age || (ec && ec.age) || "",
+          feedingRoutine: pet.feeding || (ec && ec.feedingRoutine) || "",
+          personality: pet.personality || (ec && ec.personality) || "",
+          indoorOutdoor: (ec && ec.indoorOutdoor) || "", litterNotes: (ec && ec.litterNotes) || "",
+          medication: (ec && ec.medication) || "No", medicationNotes: (ec && ec.medicationNotes) || "",
         }));
       } else {
-        const ed = db.getAll("dogs").find(function(d) { return d.personId === personId && d.name && d.name.toLowerCase() === pet.name.toLowerCase(); });
-        const notes = [pet.personality, pet.recall ? "Recall: " + pet.recall : null, pet.lead_behaviour ? "Lead: " + pet.lead_behaviour : null, pet.walking_spots ? "Walking: " + pet.walking_spots : null, pet.feeding ? "Feeding: " + pet.feeding : null, pet.house_notes].filter(Boolean).join(". ");
+        const byId = pet.existingId ? db.getAll("dogs").find(function(d) { return d.id === pet.existingId; }) : null;
+        const byName = db.getAll("dogs").find(function(d) { return d.personId === personId && d.name && d.name.toLowerCase() === pet.name.toLowerCase(); });
+        const ed = byId || byName;
+        const noteParts = [pet.personality, pet.recall ? "Recall: " + pet.recall : null, pet.lead_behaviour ? "Lead: " + pet.lead_behaviour : null, pet.walking_spots ? "Walking: " + pet.walking_spots : null, pet.feeding ? "Feeding: " + pet.feeding : null, pet.house_notes].filter(Boolean).join(". ");
         db.upsert("dogs", Object.assign({}, ed || {}, {
           id: (ed && ed.id) || uid(), personId,
-          name: pet.name, breed: pet.breed || "", age: pet.age || "",
-          goodWithDogs: "", goodOnLead: "",
-          healthIssues: pet.health ? "Yes" : "No", healthNotes: pet.health || "",
-          spooks: "", vet: pet.vet || "", vetPhone: pet.vet_phone || "",
-          personality: notes, meetGreetResult: "", size: "",
+          name: pet.name, breed: pet.breed || (ed && ed.breed) || "", age: pet.age || (ed && ed.age) || "",
+          goodWithDogs: pet.lead_behaviour ? "" : (ed && ed.goodWithDogs) || "", goodOnLead: (ed && ed.goodOnLead) || "",
+          healthIssues: pet.health ? "Yes" : ((ed && ed.healthIssues) || "No"),
+          healthNotes: pet.health || (ed && ed.healthNotes) || "",
+          spooks: (ed && ed.spooks) || "", vet: pet.vet || (ed && ed.vet) || "",
+          vetPhone: pet.vet_phone || (ed && ed.vetPhone) || "",
+          personality: noteParts || (ed && ed.personality) || "",
+          meetGreetResult: (ed && ed.meetGreetResult) || "", size: (ed && ed.size) || "",
         }));
       }
     });
 
+    // Save bookings
     (result.bookings || []).forEach(function(booking) {
       if (!booking.date) return;
       const svcType = booking.type === "overnight" || booking.type === "day_visit" ? "home_sit" :
@@ -1882,7 +1924,21 @@ function SmartPaste({ existingPerson, onSave, onBack }) {
             </div>
           )}
 
-          {clarifications.length > 0 && (
+          {(result.deletions || []).length > 0 && (
+            <div>
+              <div className="section-label">WILL BE REMOVED</div>
+              <div className="card" style={{ background: "rgba(214,48,49,0.06)", borderColor: "rgba(214,48,49,0.2)" }}>
+                {result.deletions.map(function(del, i) {
+                  return (
+                    <div key={i} className="row mt-4">
+                      <span style={{ fontSize: 14, minWidth: 22 }}>🗑️</span>
+                      <div><div className="text-xs text-muted" style={{ textTransform: "capitalize" }}>{del.type}</div><div className="text-sm">{del.reason || del.id}</div></div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
             <div>
               <div className="section-label">ONE THING TO CHECK</div>
               {clarifications.map(function(c, i) {
@@ -2716,7 +2772,17 @@ function TabToday({ onOpenPerson }) {
   const earned = weekVisits.filter(function(v) { return v.paid && v.amount; }).reduce(function(s, v) { return s + parseFloat(v.amount || 0); }, 0);
   const outstanding = weekVisits.filter(function(v) { return !v.paid && v.amount; }).reduce(function(s, v) { return s + parseFloat(v.amount || 0); }, 0);
 
-  const toggleAction = function(id) { const next = Object.assign({}, completedActions, { [id]: !completedActions[id], _date: todayStr() }); setCompletedActions(next); db.set("completedActions", next); };
+  const toggleAction = function(id, isStored) {
+    const next = Object.assign({}, completedActions, { [id]: !completedActions[id], _date: todayStr() });
+    setCompletedActions(next);
+    db.set("completedActions", next);
+    // If it's a stored action (from Smart Paste), mark done in storedActions too
+    if (isStored) {
+      const stored = Array.isArray(db.get("storedActions")) ? db.get("storedActions") : [];
+      const updated = stored.map(function(a) { return a.id === id ? Object.assign({}, a, { done: !a.done }) : a; });
+      db.set("storedActions", updated);
+    }
+  };
 
   const confirmDone = function(id) {
     const next = Object.assign({}, completedVisits, { [id]: true }); setCompletedVisits(next); db.set("completedVisits", next);
@@ -2802,7 +2868,7 @@ function TabToday({ onOpenPerson }) {
           return (
             <div key={actionId} className="card" style={{ opacity: done ? 0.4 : 1 }}>
               <div className="check-row">
-                <CheckBox done={done} onToggle={function() { toggleAction(actionId); }} />
+                <CheckBox done={done} onToggle={function() { toggleAction(actionId, !!action.storedId); }} />
                 <div style={{ flex: 1 }}>
                   <div className="row-between">
                     <div className="row flex-1" style={{ cursor: "pointer" }} onClick={function() { if (!done && p) onOpenPerson(p.id); }}>
