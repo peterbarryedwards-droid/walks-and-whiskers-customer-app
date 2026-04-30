@@ -4,11 +4,12 @@ const CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap');
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :root {
-    --bg: #0d0f18; --card: #13151f; --card2: #181a27;
-    --border: #1e2135; --border2: #252840;
-    --purple: #6c5ce7; --green: #00b894; --orange: #e17055;
-    --yellow: #fdcb6e; --blue: #0984e3; --red: #d63031;
-    --text: #eef0f8; --muted: #8890b0; --muted2: #555;
+    --bg: #FDFAF6; --card: #FFFFFF; --card2: #EAF5F8;
+    --border: #DFF0F4; --border2: #c8e4ea;
+    --purple: #2A8C9E; --green: #2A8C9E; --orange: #F04E12;
+    --yellow: #F04E12; --blue: #1E6B7A; --red: #d63031;
+    --teal: #2A8C9E; --teal-dark: #1E6B7A; --teal-light: #EAF5F8;
+    --text: #1A2E35; --muted: #5A7078; --muted2: #8aabb3;
     --radius: 14px; --radius-sm: 8px;
     --safe-bottom: env(safe-area-inset-bottom, 0px);
   }
@@ -17,92 +18,92 @@ const CSS = `
   #root { display: flex; flex-direction: column; max-width: 480px; margin: 0 auto; }
   .app-shell { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
   .tab-content { flex: 1; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; padding-bottom: calc(80px + var(--safe-bottom)); }
-  .bottom-nav { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 480px; background: rgba(13,15,24,0.96); backdrop-filter: blur(20px); border-top: 1px solid var(--border); display: flex; padding-bottom: var(--safe-bottom); z-index: 100; }
+  .bottom-nav { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 480px; background: rgba(253,250,246,0.97); backdrop-filter: blur(20px); border-top: 1px solid var(--border); display: flex; padding-bottom: var(--safe-bottom); z-index: 100; box-shadow: 0 -2px 12px rgba(42,140,158,0.08); }
   .nav-tab { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 10px 4px 8px; cursor: pointer; border: none; background: none; color: var(--muted2); transition: color 0.2s; -webkit-tap-highlight-color: transparent; }
-  .nav-tab.active { color: var(--purple); }
+  .nav-tab.active { color: var(--teal); }
   .nav-tab span { font-family: 'Bebas Neue', sans-serif; font-size: 10px; letter-spacing: 0.5px; }
   .nav-icon { font-size: 22px; line-height: 1; }
-  .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin: 0 16px 12px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; margin: 0 16px 12px; box-shadow: 0 1px 4px rgba(42,140,158,0.06); }
   .card-tap { cursor: pointer; transition: background 0.15s, border-color 0.15s; -webkit-tap-highlight-color: transparent; }
-  .card-tap:active { background: var(--card2); border-color: var(--border2); }
+  .card-tap:active { background: var(--teal-light); border-color: var(--border2); }
   .card-sm { padding: 12px 14px; margin-bottom: 8px; }
   .section-label { font-family: 'Bebas Neue', sans-serif; font-size: 12px; letter-spacing: 1.5px; color: var(--muted); padding: 0 16px; margin-bottom: 8px; margin-top: 20px; display: flex; align-items: center; gap: 8px; }
   .section-label::after { content: ''; flex: 1; height: 1px; background: var(--border); }
-  .page-title { font-family: 'Bebas Neue', sans-serif; font-size: 28px; letter-spacing: 1px; line-height: 1; }
+  .page-title { font-family: 'Bebas Neue', sans-serif; font-size: 28px; letter-spacing: 1px; line-height: 1; color: var(--text); }
   .page-sub { font-size: 13px; color: var(--muted); margin-top: 3px; }
   .btn { display: flex; align-items: center; justify-content: center; gap: 6px; padding: 11px 16px; border-radius: var(--radius); border: none; cursor: pointer; font-family: 'DM Sans', sans-serif; font-size: 14px; font-weight: 700; transition: opacity 0.15s, transform 0.1s; -webkit-tap-highlight-color: transparent; width: 100%; }
   .btn:active { transform: scale(0.97); opacity: 0.85; }
-  .btn-primary { background: var(--purple); color: white; }
-  .btn-green { background: var(--green); color: #001a12; }
-  .btn-ghost { background: transparent; border: 1px solid var(--border2); color: var(--muted); }
+  .btn-primary { background: var(--teal); color: white; }
+  .btn-green { background: var(--teal); color: white; }
+  .btn-ghost { background: transparent; border: 1.5px solid var(--border2); color: var(--muted); }
   .btn-orange { background: var(--orange); color: white; }
   .btn-sm { padding: 6px 11px; font-size: 12px; width: auto; border-radius: var(--radius-sm); font-weight: 600; }
   .btn-xs { padding: 4px 8px; font-size: 11px; width: auto; border-radius: 6px; font-weight: 600; }
   .btn-row { display: flex; gap: 8px; padding: 0 16px; margin-bottom: 10px; }
   .btn-row .btn { flex: 1; }
-  .input { background: #0d0f18; border: 2px solid var(--border); border-radius: var(--radius-sm); color: var(--text); font-family: 'DM Sans', sans-serif; font-size: 15px; padding: 12px 14px; width: 100%; outline: none; transition: border-color 0.2s; line-height: 1.5; }
-  .input:focus { border-color: var(--purple); }
+  .input { background: #FDFAF6; border: 2px solid var(--border); border-radius: var(--radius-sm); color: var(--text); font-family: 'DM Sans', sans-serif; font-size: 15px; padding: 12px 14px; width: 100%; outline: none; transition: border-color 0.2s; line-height: 1.5; }
+  .input:focus { border-color: var(--teal); }
   .input::placeholder { color: var(--muted2); }
   textarea.input { resize: vertical; }
   .input-label { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
   .input-group { margin-bottom: 14px; }
-  .chip { padding: 8px 14px; border-radius: 20px; border: 1.5px solid var(--border); background: transparent; color: var(--muted); font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; -webkit-tap-highlight-color: transparent; white-space: nowrap; }
-  .chip.ap { border-color: var(--purple); background: rgba(108,92,231,0.15); color: var(--purple); }
-  .chip.ag { border-color: var(--green); background: rgba(0,184,148,0.12); color: var(--green); }
-  .chip.ao { border-color: var(--orange); background: rgba(225,112,85,0.12); color: var(--orange); }
-  .chip.ay { border-color: var(--yellow); background: rgba(253,203,110,0.1); color: var(--yellow); }
+  .chip { padding: 8px 14px; border-radius: 20px; border: 1.5px solid var(--border2); background: transparent; color: var(--muted); font-family: 'DM Sans', sans-serif; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.15s; -webkit-tap-highlight-color: transparent; white-space: nowrap; }
+  .chip.ap { border-color: var(--teal); background: rgba(42,140,158,0.1); color: var(--teal); }
+  .chip.ag { border-color: var(--teal); background: rgba(42,140,158,0.1); color: var(--teal); }
+  .chip.ao { border-color: var(--orange); background: rgba(240,78,18,0.1); color: var(--orange); }
+  .chip.ay { border-color: var(--orange); background: rgba(240,78,18,0.08); color: var(--orange); }
   .chip-row { display: flex; gap: 8px; flex-wrap: wrap; }
   .badge { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 10px; font-size: 11px; font-weight: 600; }
-  .badge-purple { background: rgba(108,92,231,0.12); color: #a89cf7; }
-  .badge-green { background: rgba(0,184,148,0.1); color: #00c9a0; }
-  .badge-orange { background: rgba(225,112,85,0.12); color: #f0856a; }
-  .badge-yellow { background: rgba(253,203,110,0.1); color: #fdd97e; }
-  .badge-muted { background: rgba(136,144,176,0.1); color: #9aa0b8; }
+  .badge-purple { background: rgba(42,140,158,0.1); color: var(--teal-dark); }
+  .badge-green { background: rgba(42,140,158,0.1); color: var(--teal-dark); }
+  .badge-orange { background: rgba(240,78,18,0.1); color: var(--orange); }
+  .badge-yellow { background: rgba(240,78,18,0.08); color: var(--orange); }
+  .badge-muted { background: rgba(90,112,120,0.1); color: var(--muted); }
   .check-row { display: flex; align-items: flex-start; gap: 12px; }
   .check-box { width: 26px; height: 26px; min-width: 26px; border-radius: 8px; border: 2px solid var(--border2); background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.15s; -webkit-tap-highlight-color: transparent; flex-shrink: 0; margin-top: 1px; }
-  .check-box.done { background: var(--green); border-color: var(--green); }
-  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 200; display: flex; flex-direction: column; justify-content: flex-end; }
+  .check-box.done { background: var(--teal); border-color: var(--teal); }
+  .modal-overlay { position: fixed; inset: 0; background: rgba(26,46,53,0.4); z-index: 200; display: flex; flex-direction: column; justify-content: flex-end; }
   .modal-sheet { background: var(--card); border-radius: 20px 20px 0 0; padding: 20px 16px; padding-bottom: calc(20px + var(--safe-bottom)); max-height: 90dvh; overflow-y: auto; }
   .modal-handle { width: 36px; height: 4px; background: var(--border2); border-radius: 2px; margin: 0 auto 20px; }
-  .modal-title { font-family: 'Bebas Neue', sans-serif; font-size: 22px; letter-spacing: 1px; margin-bottom: 16px; }
-  .spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid var(--border2); border-top-color: var(--purple); border-radius: 50%; animation: spin 0.7s linear infinite; }
+  .modal-title { font-family: 'Bebas Neue', sans-serif; font-size: 22px; letter-spacing: 1px; margin-bottom: 16px; color: var(--text); }
+  .spinner { display: inline-block; width: 20px; height: 20px; border: 2px solid var(--border2); border-top-color: var(--teal); border-radius: 50%; animation: spin 0.7s linear infinite; }
   .spinner-lg { width: 48px; height: 48px; border-width: 3px; }
   @keyframes spin { to { transform: rotate(360deg); } }
   @keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
   .fade-up { animation: fadeUp 0.25s ease forwards; }
   .progress-track { background: var(--border); border-radius: 99px; height: 4px; overflow: hidden; margin-bottom: 24px; }
-  .progress-fill { height: 100%; border-radius: 99px; transition: width 0.4s ease; background: var(--purple); }
+  .progress-fill { height: 100%; border-radius: 99px; transition: width 0.4s ease; background: var(--teal); }
   .found-row { display: flex; align-items: flex-start; gap: 10px; padding: 9px 0; border-bottom: 1px solid var(--border); }
   .found-row:last-child { border-bottom: none; }
-  .missing-chip { display: inline-flex; align-items: center; gap: 5px; background: rgba(214,48,49,0.1); border: 1px solid rgba(214,48,49,0.3); border-radius: 8px; padding: 5px 10px; font-size: 12px; color: #ff7675; font-weight: 600; margin: 3px; }
-  .draft-box { background: #0d0f18; border: 1.5px solid var(--border2); border-radius: var(--radius-sm); padding: 16px; font-family: 'DM Mono', monospace; font-size: 13px; line-height: 1.7; color: #c8d0f0; white-space: pre-wrap; width: 100%; resize: vertical; outline: none; min-height: 140px; }
-  .draft-box:focus { border-color: var(--purple); }
-  .double-check-box { background: #0d1a0d; border: 1px solid rgba(0,184,148,0.3); border-radius: var(--radius-sm); padding: 14px; margin-top: 12px; }
-  .bubble-in { background: var(--border); border-radius: 14px 14px 14px 4px; padding: 11px 14px; font-size: 13px; color: #c8d0f0; line-height: 1.6; max-width: 82%; }
-  .bubble-out { background: #1e1b4b; border: 1px solid #3730a3; border-radius: 14px 14px 4px 14px; padding: 11px 14px; font-size: 13px; color: #c7d2fe; line-height: 1.6; max-width: 82%; margin-left: auto; }
+  .missing-chip { display: inline-flex; align-items: center; gap: 5px; background: rgba(240,78,18,0.08); border: 1px solid rgba(240,78,18,0.25); border-radius: 8px; padding: 5px 10px; font-size: 12px; color: var(--orange); font-weight: 600; margin: 3px; }
+  .draft-box { background: #EAF5F8; border: 1.5px solid var(--border2); border-radius: var(--radius-sm); padding: 16px; font-family: 'DM Mono', monospace; font-size: 13px; line-height: 1.7; color: var(--text); white-space: pre-wrap; width: 100%; resize: vertical; outline: none; min-height: 140px; }
+  .draft-box:focus { border-color: var(--teal); }
+  .double-check-box { background: rgba(42,140,158,0.05); border: 1px solid rgba(42,140,158,0.2); border-radius: var(--radius-sm); padding: 14px; margin-top: 12px; }
+  .bubble-in { background: var(--teal-light); border-radius: 14px 14px 14px 4px; padding: 11px 14px; font-size: 13px; color: var(--text); line-height: 1.6; max-width: 82%; }
+  .bubble-out { background: var(--teal); border-radius: 14px 14px 4px 14px; padding: 11px 14px; font-size: 13px; color: white; line-height: 1.6; max-width: 82%; margin-left: auto; }
   .stage-pill { display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 10px; font-size: 11px; font-weight: 600; }
-  .back-btn { display: flex; align-items: center; gap: 6px; color: var(--purple); font-size: 14px; font-weight: 600; padding: 12px 16px 4px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .back-btn { display: flex; align-items: center; gap: 6px; color: var(--teal); font-size: 14px; font-weight: 600; padding: 12px 16px 4px; cursor: pointer; -webkit-tap-highlight-color: transparent; }
   .row { display: flex; align-items: center; gap: 8px; }
   .row-between { display: flex; align-items: center; justify-content: space-between; }
   .flex-1 { flex: 1; }
   .text-sm { font-size: 13px; } .text-xs { font-size: 11px; }
-  .text-muted { color: var(--muted); } .text-green { color: var(--green); }
-  .text-orange { color: var(--orange); } .text-purple { color: var(--purple); }
+  .text-muted { color: var(--muted); } .text-green { color: var(--teal); }
+  .text-orange { color: var(--orange); } .text-purple { color: var(--teal); }
   .fw-600 { font-weight: 600; }
   .mt-4{margin-top:4px} .mt-8{margin-top:8px} .mt-12{margin-top:12px} .mt-16{margin-top:16px}
   .mb-4{margin-bottom:4px} .mb-8{margin-bottom:8px} .mb-12{margin-bottom:12px} .mb-16{margin-bottom:16px}
   .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
-  .earnings-card { background: linear-gradient(135deg, #1a1030 0%, #13151f 100%); border: 1px solid rgba(108,92,231,0.25); border-radius: var(--radius); padding: 16px; margin: 0 16px 12px; }
+  .earnings-card { background: linear-gradient(135deg, #EAF5F8 0%, #FDFAF6 100%); border: 1px solid rgba(42,140,158,0.2); border-radius: var(--radius); padding: 16px; margin: 0 16px 12px; }
   .empty-state { text-align: center; padding: 48px 24px; color: var(--muted); }
   .empty-state .icon { font-size: 44px; margin-bottom: 12px; }
   .empty-state h3 { font-family: 'Bebas Neue', sans-serif; font-size: 20px; margin-bottom: 6px; color: var(--text); }
   .pill-tabs { display: flex; gap: 8px; padding: 0 16px; overflow-x: auto; scrollbar-width: none; }
   .pill-tabs::-webkit-scrollbar { display: none; }
-  .pill-tab { padding: 6px 12px; border-radius: 20px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: all 0.15s; -webkit-tap-highlight-color: transparent; }
-  .pill-tab.active { background: var(--purple); border-color: var(--purple); color: white; }
-  .toast { position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%); background: var(--card2); border: 1px solid var(--border2); border-radius: 12px; padding: 10px 18px; font-weight: 700; font-size: 13px; z-index: 999; white-space: nowrap; }
+  .pill-tab { padding: 6px 12px; border-radius: 20px; border: 1px solid var(--border2); background: transparent; color: var(--muted); font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; transition: all 0.15s; -webkit-tap-highlight-color: transparent; }
+  .pill-tab.active { background: var(--teal); border-color: var(--teal); color: white; }
+  .toast { position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%); background: var(--text); border-radius: 12px; padding: 10px 18px; font-weight: 700; font-size: 13px; color: white; z-index: 999; white-space: nowrap; box-shadow: 0 4px 16px rgba(26,46,53,0.2); }
   .type-card { background: var(--card); border: 1.5px solid var(--border); border-radius: var(--radius); padding: 13px 14px; cursor: pointer; transition: all 0.15s; display: flex; align-items: center; gap: 12px; margin-bottom: 9px; -webkit-tap-highlight-color: transparent; }
-  .type-card:active { background: var(--card2); }
+  .type-card:active { background: var(--teal-light); border-color: var(--teal); }
 `;
 
 /* SUPABASE — cloud database */
@@ -268,12 +269,12 @@ const daysSince = d => { const ms = Date.now() - new Date(d).getTime(); return M
 
 /* CONSTANTS */
 const STAGES = [
-  { id: "new_enquiry",    label: "New Enquiry",   color: "#fdcb6e" },
-  { id: "replied",        label: "Replied",        color: "#6c5ce7" },
+  { id: "new_enquiry",    label: "New Enquiry",   color: "#F04E12" },
+  { id: "replied",        label: "Replied",        color: "#2A8C9E" },
   { id: "interested",     label: "Interested",     color: "#0984e3" },
-  { id: "meet_arranged",  label: "Meet Arranged",  color: "#00b894" },
-  { id: "met",            label: "Met",            color: "#00b894" },
-  { id: "active",         label: "Active Client",  color: "#00b894" },
+  { id: "meet_arranged",  label: "Meet Arranged",  color: "#2A8C9E" },
+  { id: "met",            label: "Met",            color: "#2A8C9E" },
+  { id: "active",         label: "Active Client",  color: "#2A8C9E" },
   { id: "gone_quiet",     label: "Gone Quiet",     color: "#e17055" },
   { id: "not_proceeding", label: "Not Proceeding", color: "#555"    },
 ];
@@ -289,9 +290,9 @@ const SERVICES = [
 const SERVICE_MAP = Object.fromEntries(SERVICES.map(s => [s.id, s]));
 
 const ENQUIRY_TYPES = [
-  { id: "new_client",      label: "New Client",       icon: "👋", color: "#6c5ce7", desc: "Someone reaching out for the first time" },
-  { id: "existing_client", label: "Existing Client",  icon: "🐾", color: "#00b894", desc: "A client you already walk for" },
-  { id: "quote",           label: "Price Enquiry",    icon: "💷", color: "#fdcb6e", desc: "They want to know your rates" },
+  { id: "new_client",      label: "New Client",       icon: "👋", color: "#2A8C9E", desc: "Someone reaching out for the first time" },
+  { id: "existing_client", label: "Existing Client",  icon: "🐾", color: "#2A8C9E", desc: "A client you already walk for" },
+  { id: "quote",           label: "Price Enquiry",    icon: "💷", color: "#F04E12", desc: "They want to know your rates" },
   { id: "confirm",         label: "General Response", icon: "💬", color: "#0984e3", desc: "Follow ups, anything else" },
   { id: "decline",         label: "Turn Down a Job",  icon: "🙏", color: "#e17055", desc: "Can't take it — be kind" },
 ];
@@ -665,7 +666,7 @@ function Chip({ label, active, color, onClick }) {
 function CheckBox({ done, onToggle }) {
   return (
     <div className={"check-box" + (done ? " done" : "")} onClick={onToggle}>
-      {done && <span style={{ color: "#001a12", fontSize: 13, fontWeight: 800 }}>✓</span>}
+      {done && <span style={{ color: "#1A2E35", fontSize: 13, fontWeight: 800 }}>✓</span>}
     </div>
   );
 }
@@ -705,7 +706,7 @@ function MessagingFlow({ person, onBack, onPersonUpdated, onEditMsg, onDeleteMsg
   const inputRef = useRef(null);
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
-  const typeColor = (enquiryType && enquiryType.color) || "#6c5ce7";
+  const typeColor = (enquiryType && enquiryType.color) || "#2A8C9E";
 
   const saveMessageEdit = (idx) => {
     if (!currentPerson) return;
@@ -1043,7 +1044,7 @@ function MessagingFlow({ person, onBack, onPersonUpdated, onEditMsg, onDeleteMsg
                   <span style={{ fontSize: 15, width: 22, flexShrink: 0 }}>{meta.icon}</span>
                   <div className="flex-1">
                     <div style={{ fontSize: 11, color: "var(--muted2)", fontWeight: 700, textTransform: "uppercase" }}>{meta.label}</div>
-                    <div style={{ fontSize: 13, color: has ? "#c8d0f0" : "var(--muted2)", marginTop: 2, fontStyle: has ? "normal" : "italic" }}>{has ? val : "Tap to add..."}</div>
+                    <div style={{ fontSize: 13, color: has ? "var(--text)" : "var(--muted2)", marginTop: 2, fontStyle: has ? "normal" : "italic" }}>{has ? val : "Tap to add..."}</div>
                   </div>
                   <span style={{ fontSize: 12, color: has ? "var(--green)" : "var(--muted2)" }}>{has ? "✓" : "✏️"}</span>
                 </div>
@@ -1113,10 +1114,10 @@ function MessagingFlow({ person, onBack, onPersonUpdated, onEditMsg, onDeleteMsg
           </div>
 
           <div className="card mt-12" style={{ marginLeft: 0, marginRight: 0, background: "rgba(108,92,231,0.06)", borderColor: "rgba(108,92,231,0.2)" }}>
-            <div className="section-label" style={{ paddingLeft: 0, marginTop: 0, color: "var(--purple)" }}>LOG A REPLY I SENT</div>
+            <div className="section-label" style={{ paddingLeft: 0, marginTop: 0, color: "var(--teal)" }}>LOG A REPLY I SENT</div>
             <div className="text-sm text-muted mb-8">Already replied outside the app? Paste it here so the AI has the full picture.</div>
             <textarea className="input" rows={3} value={manualMsg} onChange={function(e) { setManualMsg(e.target.value); }} placeholder="Paste the message you sent..." />
-            <button className="btn btn-ghost mt-8" disabled={!manualMsg.trim()} style={{ opacity: manualMsg.trim() ? 1 : 0.4, borderColor: "rgba(108,92,231,0.4)", color: "var(--purple)" }} onClick={logManualReply}>Log Reply</button>
+            <button className="btn btn-ghost mt-8" disabled={!manualMsg.trim()} style={{ opacity: manualMsg.trim() ? 1 : 0.4, borderColor: "rgba(108,92,231,0.4)", color: "var(--teal)" }} onClick={logManualReply}>Log Reply</button>
           </div>
 
           <div className="section-label mt-16">NEW MESSAGE TYPE</div>
@@ -1232,7 +1233,7 @@ function MessagingFlow({ person, onBack, onPersonUpdated, onEditMsg, onDeleteMsg
                     <span style={{ fontSize: 17, width: 26, flexShrink: 0 }}>{meta.icon}</span>
                     <div className="flex-1">
                       <div style={{ fontSize: 11, color: "var(--muted2)", fontWeight: 700, textTransform: "uppercase" }}>{meta.label}</div>
-                      <div style={{ fontSize: 14, color: "#c8d0f0", marginTop: 2 }}>{val}</div>
+                      <div style={{ fontSize: 14, color: "var(--text)", marginTop: 2 }}>{val}</div>
                     </div>
                     <span className="text-green" style={{ fontSize: 15 }}>✓</span>
                   </div>
@@ -1265,7 +1266,7 @@ function MessagingFlow({ person, onBack, onPersonUpdated, onEditMsg, onDeleteMsg
             </button>
           ) : (
             <div style={{ marginTop: 12, background: "rgba(108,92,231,0.06)", border: "1px solid rgba(108,92,231,0.2)", borderRadius: "var(--radius-sm)", padding: "12px" }}>
-              <div style={{ fontSize: 12, color: "var(--purple)", fontWeight: 700, marginBottom: 8 }}>LOG YOUR OWN REPLY</div>
+              <div style={{ fontSize: 12, color: "var(--teal)", fontWeight: 700, marginBottom: 8 }}>LOG YOUR OWN REPLY</div>
               <div className="text-sm text-muted mb-8">Paste what you sent — I will save the client info and log it to the thread.</div>
               <textarea className="input" rows={4} value={ownReplyText} onChange={function(e) { setOwnReplyText(e.target.value); }} placeholder="Paste the message you sent..." autoFocus />
               <div className="btn-row mt-8" style={{ padding: 0 }}>
@@ -1312,7 +1313,7 @@ function MessagingFlow({ person, onBack, onPersonUpdated, onEditMsg, onDeleteMsg
             </button>
           ) : (
             <div style={{ marginTop: 12, background: "rgba(108,92,231,0.06)", border: "1px solid rgba(108,92,231,0.2)", borderRadius: "var(--radius-sm)", padding: "12px" }}>
-              <div style={{ fontSize: 12, color: "var(--purple)", fontWeight: 700, marginBottom: 8 }}>LOG YOUR OWN REPLY</div>
+              <div style={{ fontSize: 12, color: "var(--teal)", fontWeight: 700, marginBottom: 8 }}>LOG YOUR OWN REPLY</div>
               <div className="text-sm text-muted mb-8">Paste what you sent — I will save everything and log it to the thread.</div>
               <textarea className="input" rows={4} value={ownReplyText} onChange={function(e) { setOwnReplyText(e.target.value); }} placeholder="Paste the message you sent..." />
               <div className="btn-row mt-8" style={{ padding: 0 }}>
@@ -1515,7 +1516,7 @@ function DogWizard({ personId, existingDog, onSave, onBack }) {
     <div>
       <BackBtn onBack={step === 0 ? onBack : function() { setStep(function(p) { return p - 1; }); }} />
       <div style={{ padding: "0 16px 24px" }}>
-        <div style={{ fontSize: 11, color: "var(--purple)", fontWeight: 700, letterSpacing: 0.5, marginBottom: 8 }}>{(step + 1) + " OF " + steps.length}</div>
+        <div style={{ fontSize: 11, color: "var(--teal)", fontWeight: 700, letterSpacing: 0.5, marginBottom: 8 }}>{(step + 1) + " OF " + steps.length}</div>
         <div className="progress-track"><div className="progress-fill" style={{ width: pctW }} /></div>
         <div className="page-title mb-16">{s.title}</div>
         {s.body}
@@ -1548,7 +1549,7 @@ function CatWizard({ personId, existingCat, onSave, onBack }) {
     <div>
       <BackBtn onBack={step === 0 ? onBack : function() { setStep(function(p) { return p - 1; }); }} />
       <div style={{ padding: "0 16px 24px" }}>
-        <div style={{ fontSize: 11, color: "var(--purple)", fontWeight: 700, letterSpacing: 0.5, marginBottom: 8 }}>{(step + 1) + " OF " + steps.length}</div>
+        <div style={{ fontSize: 11, color: "var(--teal)", fontWeight: 700, letterSpacing: 0.5, marginBottom: 8 }}>{(step + 1) + " OF " + steps.length}</div>
         <div className="progress-track"><div className="progress-fill" style={{ width: pctW }} /></div>
         <div className="page-title mb-16">{s.title}</div>
         {s.body}
@@ -2003,7 +2004,7 @@ function SmartPaste({ existingPerson, onSave, onBack }) {
                 {actions.map(function(action, i) {
                   return (
                     <div key={i} className="row mt-8" style={{ alignItems: "flex-start" }}>
-                      <span className="dot" style={{ background: action.urgency === "high" ? "var(--orange)" : action.urgency === "medium" ? "var(--yellow)" : "var(--muted2)", marginTop: 5, flexShrink: 0 }} />
+                      <span className="dot" style={{ background: action.urgency === "high" ? "var(--orange)" : action.urgency === "medium" ? "var(--orange)" : "var(--muted2)", marginTop: 5, flexShrink: 0 }} />
                       <div style={{ marginLeft: 8 }}>
                         <div style={{ fontSize: 13, fontWeight: 600 }}>{action.description}</div>
                         {action.due && <div className="text-xs text-muted mt-2">{"By: " + (action.due.includes("-") ? fmtDate(action.due) : action.due)}</div>}
@@ -2262,7 +2263,7 @@ function NotesTab({ person, onUpdate }) {
             <div>
               <div className="section-label">AI Summary</div>
               <div className="card" style={{ background: "rgba(108,92,231,0.06)", borderColor: "rgba(108,92,231,0.2)" }}>
-                <div className="text-sm" style={{ lineHeight: 1.7, color: "#c8d0f0" }}>{person.aiSummary}</div>
+                <div className="text-sm" style={{ lineHeight: 1.7, color: "var(--text)" }}>{person.aiSummary}</div>
               </div>
             </div>
           )}
@@ -2569,7 +2570,7 @@ function PersonDetail({ personId, onBack, onUpdate }) {
       <div className="btn-row">
         <button className="btn btn-primary btn-sm" onClick={function() { setActiveTab("messages"); }}>💬 Messages</button>
         <button className="btn btn-green btn-sm" onClick={function() { setActiveTab("bookings"); setShowBookingForm(true); }}>+ Book</button>
-        <button className="btn btn-ghost btn-sm" style={{ color: "var(--yellow)", borderColor: "rgba(253,203,110,0.3)" }} onClick={function() { const all = db.getAll("people"); const idx = all.findIndex(function(p) { return p.id === personId; }); if (idx >= 0) { all[idx].stage = "not_proceeding"; all[idx].lastActionDate = nowStr(); db.set("people", all); } refresh(); }}>Archive</button>
+        <button className="btn btn-ghost btn-sm" style={{ color: "var(--orange)", borderColor: "rgba(253,203,110,0.3)" }} onClick={function() { const all = db.getAll("people"); const idx = all.findIndex(function(p) { return p.id === personId; }); if (idx >= 0) { all[idx].stage = "not_proceeding"; all[idx].lastActionDate = nowStr(); db.set("people", all); } refresh(); }}>Archive</button>
         <button className="btn btn-ghost btn-sm" style={{ color: "var(--red)", borderColor: "rgba(214,48,49,0.3)" }} onClick={deletePerson}>Delete</button>
       </div>
 
@@ -2611,7 +2612,7 @@ function PersonDetail({ personId, onBack, onUpdate }) {
             const hasAny = fields.some(function(f) { return !!f[2]; });
             return (
               <div key={dog.id}>
-                <div className="section-label" style={{ cursor: "pointer" }} onClick={function() { setSelectedDog(dog); }}>🐕 {(dog.name || "Dog").toUpperCase()} <span style={{ fontSize: 10, color: "var(--purple)", marginLeft: 4 }}>edit ›</span></div>
+                <div className="section-label" style={{ cursor: "pointer" }} onClick={function() { setSelectedDog(dog); }}>🐕 {(dog.name || "Dog").toUpperCase()} <span style={{ fontSize: 10, color: "var(--teal)", marginLeft: 4 }}>edit ›</span></div>
                 <div className="card">
                   {!hasAny ? <div className="text-sm text-muted" style={{ fontStyle: "italic" }}>Tap section label to add details</div> : fields.filter(function(f) { return f[2]; }).map(function(f, i) {
                     return <div key={i} className="row mt-4"><span style={{ fontSize: 14, minWidth: 22 }}>{f[0]}</span><div><div className="text-xs text-muted">{f[1]}</div><div className="text-sm">{f[2]}</div></div></div>;
@@ -2627,7 +2628,7 @@ function PersonDetail({ personId, onBack, onUpdate }) {
             const hasAny = fields.some(function(f) { return !!f[2]; });
             return (
               <div key={cat.id}>
-                <div className="section-label" style={{ cursor: "pointer" }} onClick={function() { setSelectedCat(cat); }}>🐱 {(cat.name || "Cat").toUpperCase()} <span style={{ fontSize: 10, color: "var(--purple)", marginLeft: 4 }}>edit ›</span></div>
+                <div className="section-label" style={{ cursor: "pointer" }} onClick={function() { setSelectedCat(cat); }}>🐱 {(cat.name || "Cat").toUpperCase()} <span style={{ fontSize: 10, color: "var(--teal)", marginLeft: 4 }}>edit ›</span></div>
                 <div className="card">
                   {!hasAny ? <div className="text-sm text-muted" style={{ fontStyle: "italic" }}>Tap section label to add details</div> : fields.filter(function(f) { return f[2]; }).map(function(f, i) {
                     return <div key={i} className="row mt-4"><span style={{ fontSize: 14, minWidth: 22 }}>{f[0]}</span><div><div className="text-xs text-muted">{f[1]}</div><div className="text-sm">{f[2]}</div></div></div>;
@@ -2750,7 +2751,7 @@ function PersonDetail({ personId, onBack, onUpdate }) {
                 })}
                 <div className="btn-row mt-8" style={{ padding: 0 }}>
                   <button className="btn btn-ghost" onClick={function() { setParsedMeet(null); setMeetPasteText(""); }}>Start over</button>
-                  <button className="btn btn-primary" style={{ background: "#fdcb6e", color: "#1a1a00" }} disabled={!parsedMeet.some(function(d) { return d.selected; })} onClick={function() { saveAllParsedDates(true); }}>🤝 Add Meet and Greet ✓</button>
+                  <button className="btn btn-primary" style={{ background: "#F04E12", color: "#1A2E35" }} disabled={!parsedMeet.some(function(d) { return d.selected; })} onClick={function() { saveAllParsedDates(true); }}>🤝 Add Meet and Greet ✓</button>
                 </div>
               </div>
             )}
@@ -2787,7 +2788,7 @@ function PersonDetail({ personId, onBack, onUpdate }) {
                   <div className="row">
                     {!v.isMeetGreet && (
                       <div className={"check-box" + (v.paid ? " done" : "")} style={{ width: 22, height: 22, borderRadius: 6 }} onClick={function() { togglePaid(v.id); }}>
-                        {v.paid && <span style={{ color: "#001a12", fontSize: 11, fontWeight: 800 }}>✓</span>}
+                        {v.paid && <span style={{ color: "#1A2E35", fontSize: 11, fontWeight: 800 }}>✓</span>}
                       </div>
                     )}
                     <button className="btn btn-ghost btn-xs" style={{ color: "var(--red)", borderColor: "transparent", marginLeft: 4 }} onClick={function() { deleteVisit(v.id); }}>✕</button>
@@ -2953,7 +2954,7 @@ function TabToday({ onOpenPerson }) {
       <div style={{ padding: "20px 16px 12px" }}>
         <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 13, letterSpacing: 2, color: "var(--muted)", marginBottom: 4 }}>WALKS AND WHISKERS</div>
         <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 32, lineHeight: 1 }}>{greeting + ", Freddie 👋"}</div>
-        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, color: "var(--purple)", marginTop: 6 }}>{new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}</div>
+        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, color: "var(--teal)", marginTop: 6 }}>{new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" })}</div>
       </div>
 
       {/* Google Calendar connection */}
@@ -3003,7 +3004,7 @@ function TabToday({ onOpenPerson }) {
                 <div style={{ flex: 1 }}>
                   <div className="row-between">
                     <div className="row flex-1" style={{ cursor: "pointer" }} onClick={function() { if (!done && p) onOpenPerson(p.id); }}>
-                      <span className="dot" style={{ background: action.urgency === "high" ? "var(--orange)" : action.urgency === "medium" ? "var(--yellow)" : "var(--muted2)" }} />
+                      <span className="dot" style={{ background: action.urgency === "high" ? "var(--orange)" : action.urgency === "medium" ? "var(--orange)" : "var(--muted2)" }} />
                       <div>
                         <div style={{ fontWeight: 600, fontSize: 13 }}>{action.label}</div>
                         {action.due && <div className="text-xs text-muted mt-2">{action.due === todayDate ? "Today" : fmtDate(action.due)}</div>}
@@ -3038,7 +3039,7 @@ function TabToday({ onOpenPerson }) {
       <div className="earnings-card">
         <div className="row-between">
           <div><div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 26, color: "var(--green)" }}>{"£" + earned.toFixed(0)}</div><div className="text-xs text-muted">earned</div></div>
-          {outstanding > 0 && <div style={{ textAlign: "right" }}><div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "var(--yellow)" }}>{"£" + outstanding.toFixed(0)}</div><div className="text-xs text-muted">outstanding</div></div>}
+          {outstanding > 0 && <div style={{ textAlign: "right" }}><div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, color: "var(--orange)" }}>{"£" + outstanding.toFixed(0)}</div><div className="text-xs text-muted">outstanding</div></div>}
           {earned === 0 && outstanding === 0 && <div className="text-sm text-muted">No paid visits logged yet</div>}
         </div>
       </div>
@@ -3276,7 +3277,7 @@ function TabSchedule({ onOpenPerson }) {
                         const petNames = dogs.map(function(d) { return d.name; }).concat(cats.map(function(c) { return c.name; })).filter(Boolean).join(", ");
                         const svc = SERVICE_MAP[v.serviceType];
                         return (
-                          <div key={v.id} style={{ padding: "5px 8px", background: v.isMeetGreet ? "rgba(253,203,110,0.1)" : isPast ? "var(--bg)" : "rgba(108,92,231,0.08)", borderRadius: 8, marginBottom: 4, cursor: "pointer", opacity: isPast || v.status === "completed" ? 0.55 : 1 }} onClick={function() { if (p) onOpenPerson(p.id); }}>
+                          <div key={v.id} style={{ padding: "5px 8px", background: v.isMeetGreet ? "rgba(253,203,110,0.1)" : isPast ? "var(--bg)" : "rgba(42,140,158,0.08)", borderRadius: 8, marginBottom: 4, cursor: "pointer", opacity: isPast || v.status === "completed" ? 0.55 : 1 }} onClick={function() { if (p) onOpenPerson(p.id); }}>
                             <div style={{ fontWeight: 600, fontSize: 13 }}>
                               {v.time ? v.time + " · " : ""}{v.isMeetGreet ? "🤝 Meet" : ((svc && svc.icon) || "") + " " + (petNames || (p && p.name) || "—")}
                             </div>
@@ -3351,8 +3352,8 @@ function TabPrices() {
         );
       })}
       <div style={{ padding: "0 16px 16px" }}>
-        <div style={{ background: "rgba(108,92,231,0.08)", border: "1px solid rgba(108,92,231,0.2)", borderRadius: "var(--radius-sm)", padding: "12px 14px" }}>
-          <div style={{ fontSize: 12, color: "var(--purple)", fontWeight: 700, marginBottom: 4 }}>ℹ️ HOW THIS WORKS</div>
+        <div style={{ background: "rgba(42,140,158,0.08)", border: "1px solid rgba(108,92,231,0.2)", borderRadius: "var(--radius-sm)", padding: "12px 14px" }}>
+          <div style={{ fontSize: 12, color: "var(--teal)", fontWeight: 700, marginBottom: 4 }}>ℹ️ HOW THIS WORKS</div>
           <div className="text-sm text-muted">When replying to a Direct or Other enquiry, the AI uses these prices automatically. Rover and Bark set their own rates — prices are never mentioned there.</div>
         </div>
       </div>
@@ -3390,7 +3391,7 @@ export default function App() {
     <>
       <style>{CSS}</style>
       <div className="app-shell" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100dvh", gap: 16 }}>
-        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, letterSpacing: 3, color: "var(--purple)" }}>WALKS AND WHISKERS</div>
+        <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, letterSpacing: 3, color: "var(--teal)" }}>WALKS AND WHISKERS</div>
         <Spinner large />
         <div className="text-sm text-muted">Loading your data...</div>
       </div>
