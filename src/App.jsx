@@ -443,7 +443,7 @@ async function gcalCreateEvent(booking) {
       const r = await fetch("/api/calendar", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "create", email: account.email, booking }),
+        body: JSON.stringify({ action: "create", email: account.email, key: account.key, booking }),
       });
       const data = await r.json();
       if (data.eventId) results.push({ email: account.email, eventId: data.eventId });
@@ -2966,8 +2966,9 @@ function TabToday({ onOpenPerson }) {
         </div>
       ) : (
         <div style={{ padding: "0 16px 4px", display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {gcalAccounts.map(function(acc) {
-            return <div key={acc.email} style={{ fontSize: 11, color: "var(--green)", background: "rgba(0,184,148,0.08)", borderRadius: 8, padding: "3px 8px" }}>📅 {acc.email}</div>;
+          {gcalAccounts.map(function(acc, i) {
+            const label = acc.email || acc.name || "Connected";
+            return <div key={i} style={{ fontSize: 11, color: "var(--teal)", background: "rgba(42,140,158,0.08)", borderRadius: 8, padding: "3px 8px" }}>📅 {label}</div>;
           })}
           <button className="btn btn-ghost btn-sm" style={{ fontSize: 11, padding: "2px 8px" }} onClick={function() { gcalConnect(); }}>+ Add account</button>
         </div>
