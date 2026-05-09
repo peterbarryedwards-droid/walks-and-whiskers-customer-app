@@ -51,7 +51,8 @@ export default async function handler(req, res) {
     });
 
     const appUrl = process.env.GOOGLE_REDIRECT_URI.replace("/api/gcal-callback", "");
-    return res.redirect(302, appUrl + "?gcal=connected&email=" + encodeURIComponent(user.email));
+    const emailParam = user.email ? encodeURIComponent(user.email) : "";
+    return res.redirect(302, appUrl + "?gcal=connected" + (emailParam ? "&email=" + emailParam : ""));
   } catch (e) {
     console.error("OAuth callback error:", e);
     const appUrl = (process.env.GOOGLE_REDIRECT_URI || "").replace("/api/gcal-callback", "") || "https://walks-and-whiskers-customer-app.vercel.app";
