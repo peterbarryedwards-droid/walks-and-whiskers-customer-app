@@ -1,9 +1,12 @@
-async function getValidToken(email) {
+async function getValidToken(emailOrKey) {
   const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
   const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
-  const key = "gcal_token_" + (email || "default");
+  // Support both email and direct key lookup
+  const key = emailOrKey && emailOrKey.startsWith("gcal_token_") 
+    ? emailOrKey 
+    : "gcal_token_" + (emailOrKey || "user");
   const r = await fetch(
-    supabaseUrl + "/rest/v1/app_settings?key=eq." + key + "&select=data",
+    supabaseUrl + "/rest/v1/app_settings?key=eq." + encodeURIComponent(key) + "&select=data",
     {
       headers: {
         "apikey": supabaseKey,
@@ -89,33 +92,43 @@ function buildEvent(booking) {
 }
 
 export default async function handler(req, res) {
+  const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || "";
+  const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || "";
+
+  if (!supabaseUrl || !supabaseKey) {
+    return res.status(500).json({ error: "Supabase env vars not configured on server", connected: [] });
+  }
+
   if (req.method === "GET" && req.query.action === "status") {
-    // Check which accounts are connected
     try {
       const r = await fetch(
-        (process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL) + "/rest/v1/app_settings?key=like.gcal_token_%&select=key,data",
+        supabaseUrl + "/rest/v1/app_settings?key=like.gcal_token_%25&select=key,data",
         {
           headers: {
-            "apikey": (process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY),
-            "Authorization": "Bearer " + (process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY),
+            "apikey": supabaseKey,
+            "Authorization": "Bearer " + supabaseKey,
           },
         }
       );
       const rows = await r.json();
-      const connected = (rows || []).map(function(row) {
-        return { email: row.data.email, name: row.data.name };
+      const connected = (Array.isArray(rows) ? rows : []).map(function(row) {
+        return { 
+          email: row.data && row.data.email, 
+          name: row.data && row.data.name,
+          key: row.key
+        };
       });
       return res.json({ connected });
     } catch (e) {
-      return res.status(500).json({ error: e.message });
+      return res.status(500).json({ error: e.message, connected: [] });
     }
   }
 
   if (req.method === "POST") {
-    const { action, email, booking } = req.body;
+    const { action, email, key, booking } = req.body;
 
     try {
-      const accessToken = await getValidToken(email);
+      const accessToken = await getValidToken(key || email);
 
       if (action === "create") {
         const event = buildEvent(booking);
