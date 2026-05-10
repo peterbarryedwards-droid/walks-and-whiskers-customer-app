@@ -1720,7 +1720,11 @@ function SmartPaste({ existingPerson, onSave, onBack }) {
       postcode: client.postcode || existing.postcode || "",
       platform: client.platform || existing.platform || "Direct",
       serviceType: existing.serviceType || svcFromBooking || "",
-      stage: result.stage || existing.stage || "new_enquiry",
+      stage: (function() {
+        const hasConfirmed = (result.bookings || []).some(function(b) { return b.status === "confirmed"; });
+        const hasTentative = (result.bookings || []).some(function(b) { return b.status === "tentative"; });
+        return hasConfirmed ? "active" : hasTentative ? "tentative" : (result.stage || existing.stage || "new_enquiry");
+      })(),
       houseNotes: result.house_notes || existing.houseNotes || "",
       scheduleNotes: result.schedule_notes || existing.scheduleNotes || "",
       accessNotes: result.access_notes || existing.accessNotes || "",
@@ -1849,10 +1853,10 @@ function SmartPaste({ existingPerson, onSave, onBack }) {
       try {
         const clarAnswers = Object.entries(clarificationAnswers).map(function(e) { return "Q: " + e[0] + " A: " + e[1]; }).join("\n");
         const correctionPrompt = buildPrompt(pasteText) +
-          "\n\nPREVIOUSLY EXTRACTED:\n" + JSON.stringify(result, null, 2) +
-          "\n\nFREDDIE'S CORRECTION / ADDITIONAL INFO:\n" + correctionText +
-          (clarAnswers ? "\n\nANSWERS TO CLARIFICATION QUESTIONS:\n" + clarAnswers : "") +
-          "\n\nPlease re-extract with this correction applied. Return updated JSON only.";
+          "\n\nPREVIOUSLY EXTRACTED (this is what the AI returned before):\n" + JSON.stringify(result, null, 2) +
+          "\n\nFREDDIE'S CORRECTION — THIS IS A HARD OVERRIDE, apply it exactly:\n\"" + correctionText + "\"\n\n" +
+          (clarAnswers ? "ANSWERS TO CLARIFICATION QUESTIONS:\n" + clarAnswers + "\n\n" : "") +
+          "Return updated JSON with Freddie's correction applied. His instruction takes priority over anything in the original content. If he says mark as confirmed — set all bookings to confirmed and stage to active. If he says change a pet name — update it. If he says remove something — remove it. Apply the change directly and return the full updated JSON.";
         const raw = await callClaude(correctionPrompt, 4000);
         const parsed = extractJSON(raw);
         if (!parsed || typeof parsed !== "object") throw new Error("Invalid JSON");
