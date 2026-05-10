@@ -1777,13 +1777,25 @@ function SmartPaste({ existingPerson, onSave, onBack }) {
       }
     });
 
-    // Save bookings and push confirmed ones to Google Calendar
+    // Save bookings — first remove existing visits on the same dates to avoid duplication
+    const newDates = (result.bookings || []).map(function(b) { return b.date; }).filter(Boolean);
+    if (newDates.length > 0 && existingPerson) {
+      const existingVisits = db.getAll("visits").filter(function(v) { return v.personId === personId; });
+      const toRemove = existingVisits.filter(function(v) { return newDates.indexOf(v.date) !== -1; });
+      toRemove.forEach(function(v) { db.remove("visits", v.id); });
+    }
+
     (result.bookings || []).forEach(function(booking) {
       if (!booking.date) return;
       const svcType = booking.type === "overnight" || booking.type === "day_visit" ? "home_sit" :
         booking.type === "cat_visit" ? "cat_visit" :
         booking.type === "dog_walk" ? "dog_walk" :
         booking.type === "dog_drop_in" ? "drop_in" : "home_sit";
+      const petNames = (booking.pets_involved && booking.pets_involved.length > 0)
+        ? booking.pets_involved
+        : db.getAll("dogs").filter(function(d) { return d.personId === personId; }).map(function(d) { return d.name; })
+            .concat(db.getAll("cats").filter(function(c) { return c.personId === personId; }).map(function(c) { return c.name; }))
+            .filter(Boolean);
       db.upsert("visits", {
         id: uid(), personId, serviceType: svcType,
         date: booking.date, time: booking.time_start || "",
@@ -1793,17 +1805,15 @@ function SmartPaste({ existingPerson, onSave, onBack }) {
         paid: (booking.amount_paid || 0) > 0,
         amount: booking.amount_paid ? String(booking.amount_paid) : "",
         notes: booking.notes || "",
+        petNames: petNames,
       });
       // Push confirmed bookings to Google Calendar
       if (booking.status === "confirmed") {
-        const dogs = db.getAll("dogs").filter(function(d) { return d.personId === personId; });
-        const cats = db.getAll("cats").filter(function(c) { return c.personId === personId; });
-        const petNames = dogs.map(function(d) { return d.name; }).concat(cats.map(function(c) { return c.name; })).filter(Boolean);
-        const allPets = dogs.concat(cats);
+        const allPets = db.getAll("dogs").filter(function(d) { return d.personId === personId; })
+          .concat(db.getAll("cats").filter(function(c) { return c.personId === personId; }));
         const careNotesParts = [];
         allPets.forEach(function(pet) {
           if (pet.healthNotes) careNotesParts.push("⚠️ " + (pet.name || "Pet") + ": " + pet.healthNotes);
-          if (pet.personality && pet.personality.toLowerCase().indexOf("alone") !== -1) careNotesParts.push(pet.personality);
         });
         gcalCreateEvent({
           date: booking.date,
